@@ -18,6 +18,7 @@
 #include <signal.h>
 
 // macro
+#define POINT_COUNT 20
 #define MAX_DUTY_CYCLE 0.6
 #define CYCLE_ERROR_TO_DUTY_CYCLE 0.1
 #define OVERALL_ERROR_TO_DUTY_CYCLE 0.1
@@ -26,6 +27,7 @@
 
 // variabili globali
 int speed;
+Point points[POINT_COUNT];
 
 // definizione degli struct e i loro rispettivi tipi
 struct sched_attr {
@@ -216,6 +218,17 @@ void* odometry_entry(void* arg) {
 	pthread_exit(EXIT_SUCCESS);
 }
 
+void* cartesian_control_entry(void* arg) {
+	set_sched_deadline(1e6, 1e7, CYCLE_PERIOD_NS);
+	
+	for(;;) {
+		pthread_testcancel();
+		sched_yield();
+	}
+
+	pthread_exit(EXIT_SUCCESS);
+}
+
 int main(int argc, char* argv[]) {
 	// inizializzazione di GPIO
 	if (gpioInitialise() < 0) {
@@ -255,6 +268,9 @@ int main(int argc, char* argv[]) {
 	task_t left_motor_control = { .entry_point = motor_control_entry };
 	task_t right_motor_control = { .entry_point = motor_control_entry };
 	task_t odometry_task = { .entry_point = odometry_entry };
+
+	//creazione dei punti del arco
+	generate_arc_points(&points, POINT_COUNT, 0, 50, 50, 0, 3.14);
 
 	// creazione dei thread
 	if(pthread_create(&(left_motor_control.tid), NULL, left_motor_control.entry_point, &left_motor_control_args) != 0) {
