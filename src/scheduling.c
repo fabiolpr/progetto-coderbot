@@ -221,10 +221,7 @@ void* odometry_entry(void* arg) {
 void* cartesian_control_entry(void* arg) {
 	set_sched_deadline(1e6, 1e7, CYCLE_PERIOD_NS);
 	
-	for(;;) {
-		pthread_testcancel();
-		sched_yield();
-	}
+	sleep(6);
 
 	pthread_exit(EXIT_SUCCESS);
 }
@@ -268,6 +265,7 @@ int main(int argc, char* argv[]) {
 	task_t left_motor_control = { .entry_point = motor_control_entry };
 	task_t right_motor_control = { .entry_point = motor_control_entry };
 	task_t odometry_task = { .entry_point = odometry_entry };
+	task_t cartesian_control_task = { .entry_point = cartesian_control_entry };
 
 	//creazione dei punti del arco
 	generate_arc_points(&points, POINT_COUNT, 0, 50, 50, 0, 3.14);
@@ -286,8 +284,19 @@ int main(int argc, char* argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
-	// pausa
-	sleep(6);
+	if(pthread_create(&(cartesian_control_task.tid), NULL, cartesian_control_task.entry_point, NULL) != 0) {
+		perror("main: pthread_create: cartesian_control_task");
+		exit(EXIT_FAILURE);
+	}
+
+	// attendi la terminazione
+	if(pthread_join(cartesian_control_task.tid, NULL) != 0) {
+		perror("main: pthread_join: cartesian_control_task");
+		exit(EXIT_FAILURE);
+	} else {
+		puts("Percorso completato");
+		puts("Terminazione...");
+	}
 
 	// terminazione del programma
 	pthread_cancel(left_motor_control.tid);
@@ -296,6 +305,5 @@ int main(int argc, char* argv[]) {
     cbMotorReset(&left_motor);
     cbMotorReset(&right_motor);
     gpioTerminate();
-	printf("fine\n");
 	exit(EXIT_SUCCESS);
 }
