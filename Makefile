@@ -1,28 +1,35 @@
-# Compiler e flag
+# compiler e flag
 CC = cc
-CFLAGS = -Wall -Wextra
+CFLAGS = -Wall -Wextra -Iinclude
 
 # librerie da linkare
 LIBS = -lm -lpthread -lpigpio
 
-# source e file oggetto
-SRCS := $(wildcard *.c)
-OBJS := $(SRCS:.c=.o)
-EXE  := coderbot.exe
+# cartelle
+SRC_DIR = src
+INC_DIR = include
+BUILD_DIR = build
 
-# target di default
+# file sorgente, file oggetto e file eseguibile
+SRCS := $(wildcard $(SRC_DIR)/*.c)
+OBJS := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
+EXE  := $(BUILD_DIR)/coderbot.exe
+
+# obbiettivo di default
 all: $(EXE)
 
-# linking
+# linking dei file oggetto nel file eseguibile
 $(EXE): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ cbdef.h $^ $(LIBS)
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
-# compila i file oggetto
-%.o: %.c
+# compilazione dei file sorgente in file oggetto
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# rimuovi i file oggetto e l'eseguibile
+# rimozione della cartella di build
 clean:
-	rm -f $(OBJS) $(EXE)
+	rm -rf $(BUILD_DIR)
 
 .PHONY: all clean
