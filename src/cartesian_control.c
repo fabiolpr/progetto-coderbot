@@ -1,3 +1,13 @@
+#include "cartesian_control.h"
+#include "odometry.h" // per pose_dof
+#include <math.h>
+
+Point* waypoints;      // array di waypoints
+int N_POINTS;          // numero di waypoints
+int current_position;  // posizione corrente nel percorso
+float speed_l;         // velocità ruota sinistra
+float speed_r;         // velocità ruota destra
+
 void generate_arc_points(Point* points, int num_points, float cx, float cy, float radius, float start_angle, float end_angle) {
     Point temp[num_points];
     for (int i = 0; i < num_points; ++i) {
@@ -35,7 +45,7 @@ void cartesian_control() {
     /* CARTESIAN CONTROLLER */
     // POSIZIONE CORRENTE REALE (da odometria) APPROSSIMATA AL PUNTO della TRAIETTORIA PIU' VICINO
     current_position = nearest_point_position(waypoints, N_POINTS, pose_dof);
-    if(current_position == N_POINTS - 3){
+    if(current_position >= N_POINTS - 3){
         // FINE
         speed_l = 0;
         speed_r = 0;

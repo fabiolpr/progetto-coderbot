@@ -1,7 +1,11 @@
+//header del progetto
+#include "cbdef.h"
 #include "motor.h"
 #include "encoder.h"
-#include "cbdef.h"
-#include "odometria.h"
+#include "odometry.h"
+#include "cartesian_control.h"
+
+// librerie esterne
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
