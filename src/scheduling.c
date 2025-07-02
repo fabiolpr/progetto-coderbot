@@ -18,16 +18,11 @@
 #include <signal.h>
 
 // macro
-#define POINT_COUNT 20
 #define MAX_DUTY_CYCLE 0.6
 #define CYCLE_ERROR_TO_DUTY_CYCLE 0.1
 #define OVERALL_ERROR_TO_DUTY_CYCLE 0.1
 #define CYCLE_PERIOD_NS 2e7
 #define TIMESOURCE CLOCK_MONOTONIC
-
-// variabili globali
-int speed;
-Point points[POINT_COUNT];
 
 // definizione degli struct e i loro rispettivi tipi
 struct sched_attr {
@@ -65,6 +60,7 @@ typedef struct control_args {
 	cbMotor_t* motor;
 	cbEncoder_t* encoder;
 	float millimeters_per_tick;
+	float* speed;
 	odometry_data_t* odometry;
 } control_args_t;
 
@@ -124,7 +120,7 @@ static timespec_t ts_delta(timespec_t* const before, timespec_t* const now) {
 
 void* motor_control_entry(void* arg) {
 	// impostazione del thread per lo scheduler EDF
-	set_sched_deadline(1e6, 1e7, CYCLE_PERIOD_NS);
+	set_sched_deadline(1e5, 1e7, CYCLE_PERIOD_NS);
 
 	// creazioni delle variabili necessarie
 	control_args_t args = *(control_args_t*)arg;
@@ -142,7 +138,7 @@ void* motor_control_entry(void* arg) {
 		//salvo i tick percorsi e il delta tempo tra questo ciclo e il precedente
 		difference = ts_delta(&before, &now);
 		int total_ticks = args.encoder->ticks;
-		target = speed * (difference.tv_nsec / 1e9) / args.millimeters_per_tick;
+		target = *(args.speed) * (difference.tv_nsec / 1e9) / args.millimeters_per_tick;
 		int ticks = total_ticks - last_ticks;
 		last_ticks = total_ticks;
 
@@ -178,8 +174,8 @@ void* motor_control_entry(void* arg) {
 		// imposto la velocità e direzione del motore
 		cbMotorMove(args.motor, direction, duty_cycle);
 
-		printf("Duty cycle %f\n", duty_cycle);
-		printf("errore %d\n", overall_error_ticks);
+		//printf("Duty cycle %f\n", duty_cycle);
+		//printf("errore %d\n", overall_error_ticks);
 
 		// aspetto il prossimo periodo oppure termino il thread se richiesto
 		pthread_testcancel();
@@ -190,7 +186,7 @@ void* motor_control_entry(void* arg) {
 }
 
 void* odometry_entry(void* arg) {
-	set_sched_deadline(1e6, 1e7, CYCLE_PERIOD_NS);
+	set_sched_deadline(1e5, 1e7, CYCLE_PERIOD_NS);
 
 	odometry_args_t args = *(odometry_args_t*)arg;
 	odometry_data_t* odometry_data_left = args.left_data;
@@ -219,11 +215,15 @@ void* odometry_entry(void* arg) {
 }
 
 void* cartesian_control_entry(void* arg) {
-	set_sched_deadline(1e6, 1e7, CYCLE_PERIOD_NS);
+	set_sched_deadline(1e5, 1e7, CYCLE_PERIOD_NS);
 	
-	sleep(6);
-
-	pthread_exit(EXIT_SUCCESS);
+	for(;;) {
+		if(cartesian_control())
+			//se è stato completato il percorso
+			pthread_exit(EXIT_SUCCESS);
+		else
+			sched_yield();
+	}
 }
 
 int main(int argc, char* argv[]) {
@@ -237,7 +237,7 @@ int main(int argc, char* argv[]) {
         printf("Uso: %s <numero intero corrispondente ai millimetri al secondo da percorrere>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-    speed = atoi(argv[1]);
+    speed = atof(argv[1]);
 
 	// creazione degli struct relativi a motori e encoder
 	cbMotor_t left_motor = {PIN_LEFT_FORWARD, PIN_LEFT_BACKWARD};
@@ -258,8 +258,8 @@ int main(int argc, char* argv[]) {
 	odometry_data_t odometry_data_right = {PTHREAD_MUTEX_INITIALIZER, false};
 
 	// creazione degli struct rper gli argument dei thread
-	control_args_t left_motor_control_args = {&left_motor, &left_encoder, MILLIMETERS_PER_TICK_LEFT, &odometry_data_left};
-	control_args_t right_motor_control_args = {&right_motor, &right_encoder, MILLIMETERS_PER_TICK_RIGHT, &odometry_data_right};
+	control_args_t left_motor_control_args = {&left_motor, &left_encoder, MILLIMETERS_PER_TICK_LEFT, &speed_l, &odometry_data_left};
+	control_args_t right_motor_control_args = {&right_motor, &right_encoder, MILLIMETERS_PER_TICK_RIGHT, &speed_r, &odometry_data_right};
 	odometry_args_t odometry_args = {&odometry_data_left, &odometry_data_right};
 	// creazione degli struct relativi ai thread
 	task_t left_motor_control = { .entry_point = motor_control_entry };
@@ -268,7 +268,7 @@ int main(int argc, char* argv[]) {
 	task_t cartesian_control_task = { .entry_point = cartesian_control_entry };
 
 	//creazione dei punti del arco
-	generate_arc_points(&points, POINT_COUNT, 0, 50, 50, 0, 3.14);
+	generate_arc_points(&waypoints, N_POINTS, 500, 0, 500, 0, 1);
 
 	// creazione dei thread
 	if(pthread_create(&(left_motor_control.tid), NULL, left_motor_control.entry_point, &left_motor_control_args) != 0) {
@@ -295,15 +295,16 @@ int main(int argc, char* argv[]) {
 		exit(EXIT_FAILURE);
 	} else {
 		puts("Percorso completato");
-		puts("Terminazione...");
 	}
 
 	// terminazione del programma
+	puts("Terminazione...");
 	pthread_cancel(left_motor_control.tid);
 	pthread_cancel(right_motor_control.tid);
 	pthread_cancel(odometry_task.tid);
     cbMotorReset(&left_motor);
     cbMotorReset(&right_motor);
     gpioTerminate();
+	puts("Fine");
 	exit(EXIT_SUCCESS);
 }

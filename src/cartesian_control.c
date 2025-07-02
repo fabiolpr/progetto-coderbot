@@ -2,11 +2,11 @@
 #include "odometry.h" // per pose_dof
 #include <math.h>
 
-Point* waypoints;      // array di waypoints
-int N_POINTS;          // numero di waypoints
-int current_position;  // posizione corrente nel percorso
-float speed_l;         // velocità ruota sinistra
-float speed_r;         // velocità ruota destra
+Point waypoints[N_POINTS];      // array di waypoints
+int current_position;           // posizione corrente nel percorso
+float speed;
+float speed_l;                  // velocità ruota sinistra
+float speed_r;                  // velocità ruota destra
 
 void generate_arc_points(Point* points, int num_points, float cx, float cy, float radius, float start_angle, float end_angle) {
     Point temp[num_points];
@@ -19,6 +19,7 @@ void generate_arc_points(Point* points, int num_points, float cx, float cy, floa
 
     for(int i = num_points - 1, j = 0; i >= 0; i--, j++){
         points[j] = temp[i];
+        printf("punto %d: (%f, %f)\n", j, points[j].x, points[j].y);
     }
 }
 
@@ -41,15 +42,16 @@ int nearest_point_position(Point* waypoints, int num_points, float* pose_dof){
     return nearest_index;
 }
 
-void cartesian_control() {
+bool cartesian_control() {
     /* CARTESIAN CONTROLLER */
     // POSIZIONE CORRENTE REALE (da odometria) APPROSSIMATA AL PUNTO della TRAIETTORIA PIU' VICINO
     current_position = nearest_point_position(waypoints, N_POINTS, pose_dof);
+    printf("siamo al punto: %d\n", current_position); 
     if(current_position >= N_POINTS - 3){
         // FINE
         speed_l = 0;
         speed_r = 0;
-        return;
+        return true;
     }
 
     // waypoints[current_position + 3] POSIZIONE che si PUNTA (per evitare errori, non troppo vicina, quindi +3 posizioni)
@@ -66,18 +68,20 @@ void cartesian_control() {
     // CONFRONTO con TOLLERANZA dell'(errore dell')ANGOLO
     if(fabs(delta_theta_c) < ANGLE_TOLLERANCE){
         // ANGOLO (piu' o meno) CORRETTO, si PROCEDE in LINEA RETTA per PUNTARE alla POSIZIONE
-        speed_l = SPEED;
-        speed_r = SPEED;
+        speed_l = speed;
+        speed_r = speed;
     } else {
         // CORREZIONE VELOCITA' per STERZARE
         if(delta_theta_c < 0){
             // sterzare a DESTRA
-            speed_l = SPEED;
-            speed_r = SPEED * (1 / fabs((delta_theta_c * 180) / M_PI)); // correzione VELOCITA' PROPORZIONALE all'ERRORE
+            speed_l = speed;
+            speed_r = speed * (1 / fabs((delta_theta_c * 180) / M_PI)); // correzione VELOCITA' PROPORZIONALE all'ERRORE
         } else {
             // sterzare a SINISTRA
-            speed_l = SPEED * (1 / fabs((delta_theta_c * 180) / M_PI)); // correzione VELOCITA' PROPORZIONALE all'ERRORE
-            speed_r = SPEED;
+            speed_l = speed * (1 / fabs((delta_theta_c * 180) / M_PI)); // correzione VELOCITA' PROPORZIONALE all'ERRORE
+            speed_r = speed;
         }
     }
+
+    return false;
 }

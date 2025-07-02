@@ -1,8 +1,10 @@
 #ifndef CARTESIAN_CONTROL_H
 #define CARTESIAN_CONTROL_H
 
-#define ANGLE_TOLLERANCE 0.025
-#define SPEED 50
+#include <stdbool.h>
+
+#define ANGLE_TOLLERANCE 0.025 //angolo minimo considerato come errore
+#define N_POINTS 20 // numero di punti
 
 // Definizione del tipo Point
 typedef struct {
@@ -11,9 +13,9 @@ typedef struct {
 } Point;
 
 // Variabili globali
-extern Point* waypoints;      // array di waypoints
-extern int N_POINTS;          // numero di waypoints
+extern Point waypoints[N_POINTS];      // array di waypoints
 extern int current_position;  // posizione corrente nel percorso
+extern float speed;           // velocità generale
 extern float speed_l;         // velocità ruota sinistra
 extern float speed_r;         // velocità ruota destra
 
@@ -22,6 +24,6 @@ void generate_arc_points(Point* points, int num_points, float cx, float cy, floa
 
 int nearest_point_position(Point* waypoints, int num_points, float* pose_dof);
 
-void cartesian_control(void);
+bool cartesian_control();
 
 #endif // ARC_CONTROL_H
