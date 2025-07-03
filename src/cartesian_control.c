@@ -45,6 +45,15 @@ int nearest_point_position(Point* waypoints, int num_points, float* pose_dof){
 bool cartesian_control() {
     /* CARTESIAN CONTROLLER */
     // POSIZIONE CORRENTE REALE (da odometria) APPROSSIMATA AL PUNTO della TRAIETTORIA PIU' VICINO
+    double pose_dof[3];
+    if (pthread_mutex_trylock(&position.lock) == 0) {	
+        pose_dof[0] = position.x;
+        pose_dof[1] = position.y;
+        pose_dof[2] = position.theta;
+    	pthread_mutex_unlock(&position.lock);
+	} else
+        return false;
+
     current_position = nearest_point_position(waypoints, N_POINTS, pose_dof);
     printf("siamo al punto: %d\n", current_position); 
     if(current_position >= N_POINTS - 3){

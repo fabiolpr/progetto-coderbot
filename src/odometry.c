@@ -5,11 +5,12 @@ float mm_sx;                                                        // MILLIMETR
 float mm_dx;
 
 double pose[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};              // MATRICE per POSE (totale)
-double pose_dof[3] = {0, 0, 0};                                    // VETTORE per POSE (totale)
 double newPose[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};           // MATRICE per POSE (corrente)
 double rt[3][3], r[3][3], t1[3][3], t2[3][3], temp[3][3];           // MATRICI di SUPPORTO
                                                                  // (rototraslazione, rotazione, traslazione al CIR, traslazione dal CIR, temporanea)
 
+// struct della posizione
+position_t position = {PTHREAD_MUTEX_INITIALIZER, 0, 0, 0};
 
 // Moltiplica due matrici 3x3: C = A * B
 void moltiplica_matrici_3x3(double matA[3][3], double matB[3][3], double result[3][3]) {
@@ -22,8 +23,6 @@ void moltiplica_matrici_3x3(double matA[3][3], double matB[3][3], double result[
         result[i][2] = a0 * matB[0][2] + a1 * matB[1][2] + a2 * matB[2][2];
     }
 }
-
-
 
 /* ODOMETRIA */
 void findNewPose(int l_ticks_odo, int r_ticks_odo) {
@@ -67,8 +66,11 @@ void findNewPose(int l_ticks_odo, int r_ticks_odo) {
         for (int c = 0; c < 3; c++)
             pose[r][c] = newPose[r][c];
 
-    // creazione VETTORE per POSE
-    pose_dof[0] = pose[0][2]; // posizione x
-    pose_dof[1] = pose[1][2]; // posizione y
-    pose_dof[2] = atan2(pose[1][0], pose[0][0]); // angolo theta
+    // salvataggio della posizione
+    if (pthread_mutex_trylock(&position.lock) == 0) {		
+    	position.x = pose[0][2];
+        position.y = pose[1][2];
+        position.theta = atan2(pose[1][0], pose[0][0]);
+        pthread_mutex_unlock(&position.lock);
+	}
 }

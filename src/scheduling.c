@@ -21,7 +21,7 @@
 #define MAX_DUTY_CYCLE 0.6
 #define CYCLE_ERROR_TO_DUTY_CYCLE 0.1
 #define OVERALL_ERROR_TO_DUTY_CYCLE 0.1
-#define CYCLE_PERIOD_NS 2e7
+#define CYCLE_PERIOD_NS 5e7
 #define TIMESOURCE CLOCK_MONOTONIC
 
 // definizione degli struct e i loro rispettivi tipi
@@ -120,7 +120,7 @@ static timespec_t ts_delta(timespec_t* const before, timespec_t* const now) {
 
 void* motor_control_entry(void* arg) {
 	// impostazione del thread per lo scheduler EDF
-	set_sched_deadline(1e5, 1e7, CYCLE_PERIOD_NS);
+	set_sched_deadline(1e5, CYCLE_PERIOD_NS, CYCLE_PERIOD_NS);
 
 	// creazioni delle variabili necessarie
 	control_args_t args = *(control_args_t*)arg;
@@ -186,7 +186,7 @@ void* motor_control_entry(void* arg) {
 }
 
 void* odometry_entry(void* arg) {
-	set_sched_deadline(1e5, 1e7, CYCLE_PERIOD_NS);
+	set_sched_deadline(1e5, CYCLE_PERIOD_NS, CYCLE_PERIOD_NS);
 
 	odometry_args_t args = *(odometry_args_t*)arg;
 	odometry_data_t* odometry_data_left = args.left_data;
@@ -205,7 +205,7 @@ void* odometry_entry(void* arg) {
     		pthread_mutex_unlock(&odometry_data_right->lock);
 		}
 
-		printf("x: %f, y:%f, angolo: %f\n", pose_dof[0], pose_dof[1], pose_dof[2]);
+		printf("x: %f, y:%f, angolo: %f\n", position.x, position.y, position.theta);
 
 		pthread_testcancel();
 		sched_yield();
@@ -215,7 +215,7 @@ void* odometry_entry(void* arg) {
 }
 
 void* cartesian_control_entry(void* arg) {
-	set_sched_deadline(1e5, 1e7, CYCLE_PERIOD_NS);
+	set_sched_deadline(1e5, CYCLE_PERIOD_NS, CYCLE_PERIOD_NS);
 	
 	for(;;) {
 		if(cartesian_control())
