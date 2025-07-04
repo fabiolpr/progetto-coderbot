@@ -121,7 +121,7 @@ static timespec_t ts_delta(timespec_t* const before, timespec_t* const now) {
 
 void* motor_control_entry(void* arg) {
 	// impostazione del thread per lo scheduler EDF
-	set_sched_deadline(5e6, MOTOR_CONTROL_PERIOD_NS, MOTOR_CONTROL_PERIOD_NS);
+	set_sched_deadline(1e6, MOTOR_CONTROL_PERIOD_NS, MOTOR_CONTROL_PERIOD_NS);
 
 	// creazioni delle variabili necessarie
 	motor_control_args_t args = *(motor_control_args_t*)arg;
@@ -136,13 +136,13 @@ void* motor_control_entry(void* arg) {
 	// inizio ciclo
 	for(;;) {
 		//salvo i tick percorsi e il delta tempo tra questo ciclo e il precedente
-		difference = ts_delta(&before, &now);
+		
 		pthread_mutex_lock(&args.encoder->tick_lock);
-        int ticks = args.encoder->ticks;
+		difference = ts_delta(&before, &now);
+		int ticks = args.encoder->ticks;
+		args.encoder->ticks = 0;
         pthread_mutex_unlock(&args.encoder->tick_lock);
-		if(true) {
-			args.encoder->ticks = 0;
-		}
+
 		target = *(args.speed) * (difference.tv_nsec / 1e9) / args.millimeters_per_tick;
 
 		//aggiorno i dati per la posizione e l'angolazione
@@ -177,8 +177,7 @@ void* motor_control_entry(void* arg) {
 		// imposto la velocità e direzione del motore
 		cbMotorMove(args.motor, direction, duty_cycle);
 
-		//printf("Duty cycle %f\n", duty_cycle);
-		printf("errore %d\n", overall_error_ticks);
+		printf("Duty cycle %f, errore %d\n", duty_cycle, overall_error_ticks);
 
 		// aspetto il prossimo periodo oppure termino il thread se richiesto
 		pthread_testcancel();
@@ -198,16 +197,16 @@ void* cartesian_control_entry(void* arg) {
 	
 	for(;;) {
 	
-		if (pthread_mutex_trylock(&odometry_data_left->lock) == 0 &&
-			pthread_mutex_trylock(&odometry_data_right->lock) == 0) {
+		pthread_mutex_lock(&odometry_data_left->lock);
+		pthread_mutex_lock(&odometry_data_right->lock);
 
-			findNewPose(odometry_data_left->ticks, odometry_data_right->ticks);
-			odometry_data_left->are_ticks_reset = true;
-			odometry_data_right->are_ticks_reset = true;
+		findNewPose(odometry_data_left->ticks, odometry_data_right->ticks);
+		//la variabile are_ticks_reset non è duplicata, le singole ruote dovranno impostarla a false indipendentemente
+		odometry_data_left->are_ticks_reset = true;
+		odometry_data_right->are_ticks_reset = true;
 			
-    		pthread_mutex_unlock(&odometry_data_left->lock);
-    		pthread_mutex_unlock(&odometry_data_right->lock);
-		}
+		pthread_mutex_unlock(&odometry_data_left->lock);
+		pthread_mutex_unlock(&odometry_data_right->lock);
 
 		printf("x: %f, y:%f, angolo: %f\n", position.x, position.y, position.theta);
 
