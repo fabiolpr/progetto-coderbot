@@ -25,12 +25,14 @@
 #define ENCODER_H
 
 #include <stdint.h>
+#include <pthread.h>
 
 #include "cbdef.h"
 
 struct cbEncoder {
     cbGPIO_t pin_a, pin_b;
     cbGPIO_t last_gpio;
+    pthread_mutex_t tick_lock;
     uint16_t level_a, level_b;
     cbDir_t direction;
     int64_t ticks;

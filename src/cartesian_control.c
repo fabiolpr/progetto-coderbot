@@ -1,6 +1,6 @@
+#include <math.h>
 #include "cartesian_control.h"
 #include "odometry.h" // per pose_dof
-#include <math.h>
 
 Point waypoints[N_POINTS];      // array di waypoints
 float speed;

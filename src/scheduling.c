@@ -1,10 +1,3 @@
-//header del progetto
-#include "cbdef.h"
-#include "motor.h"
-#include "encoder.h"
-#include "odometry.h"
-#include "cartesian_control.h"
-
 // librerie esterne
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,10 +10,17 @@
 #include <stdint.h>
 #include <signal.h>
 
+//header del progetto
+#include "cbdef.h"
+#include "motor.h"
+#include "encoder.h"
+#include "odometry.h"
+#include "cartesian_control.h"
+
 // macro
 #define MAX_DUTY_CYCLE 0.6
 #define CYCLE_ERROR_TO_DUTY_CYCLE 0.1
-#define OVERALL_ERROR_TO_DUTY_CYCLE 0.1
+#define OVERALL_ERROR_TO_DUTY_CYCLE 0.05
 #define MOTOR_CONTROL_PERIOD_NS 2e7
 #define CARTESIAN_CONTROL_PERIOD_NS 3e7
 #define TIMESOURCE CLOCK_MONOTONIC
@@ -57,13 +57,13 @@ typedef struct odometry_data {
 	int ticks;
 } odometry_data_t;
 
-typedef struct control_args {
+typedef struct motor_control_args {
 	cbMotor_t* motor;
 	cbEncoder_t* encoder;
 	float millimeters_per_tick;
 	float* speed;
 	odometry_data_t* odometry;
-} control_args_t;
+} motor_control_args_t;
 
 typedef struct cartesian_control_args {
 	odometry_data_t* left_data;
@@ -124,9 +124,8 @@ void* motor_control_entry(void* arg) {
 	set_sched_deadline(5e6, MOTOR_CONTROL_PERIOD_NS, MOTOR_CONTROL_PERIOD_NS);
 
 	// creazioni delle variabili necessarie
-	control_args_t args = *(control_args_t*)arg;
+	motor_control_args_t args = *(motor_control_args_t*)arg;
 	odometry_data_t* odometry = args.odometry;
-	int last_ticks = 0;
 	int overall_error_ticks = 0;
 	int ticks_since_odometry_update = 0;
 	int target;
@@ -138,10 +137,13 @@ void* motor_control_entry(void* arg) {
 	for(;;) {
 		//salvo i tick percorsi e il delta tempo tra questo ciclo e il precedente
 		difference = ts_delta(&before, &now);
-		int total_ticks = args.encoder->ticks;
+		pthread_mutex_lock(&args.encoder->tick_lock);
+        int ticks = args.encoder->ticks;
+        pthread_mutex_unlock(&args.encoder->tick_lock);
+		if(true) {
+			args.encoder->ticks = 0;
+		}
 		target = *(args.speed) * (difference.tv_nsec / 1e9) / args.millimeters_per_tick;
-		int ticks = total_ticks - last_ticks;
-		last_ticks = total_ticks;
 
 		//aggiorno i dati per la posizione e l'angolazione
 		if (pthread_mutex_trylock(&odometry->lock) == 0) {
@@ -176,7 +178,7 @@ void* motor_control_entry(void* arg) {
 		cbMotorMove(args.motor, direction, duty_cycle);
 
 		//printf("Duty cycle %f\n", duty_cycle);
-		//printf("errore %d\n", overall_error_ticks);
+		printf("errore %d\n", overall_error_ticks);
 
 		// aspetto il prossimo periodo oppure termino il thread se richiesto
 		pthread_testcancel();
@@ -234,24 +236,24 @@ int main(int argc, char* argv[]) {
 	// creazione degli struct relativi a motori e encoder
 	cbMotor_t left_motor = {PIN_LEFT_FORWARD, PIN_LEFT_BACKWARD};
 	cbMotor_t right_motor = {PIN_RIGHT_FORWARD, PIN_RIGHT_BACKWARD};
-	cbEncoder_t left_encoder = {PIN_ENCODER_LEFT_A, PIN_ENCODER_LEFT_B, GPIO_PIN_NC, 0, 0, 0};
-    cbEncoder_t right_encoder = {PIN_ENCODER_RIGHT_A, PIN_ENCODER_RIGHT_B, GPIO_PIN_NC, 0, 0, 0};
+	cbEncoder_t left_encoder = {PIN_ENCODER_LEFT_A, PIN_ENCODER_LEFT_B, GPIO_PIN_NC, PTHREAD_MUTEX_INITIALIZER, 0, 0, 0};
+    cbEncoder_t right_encoder = {PIN_ENCODER_RIGHT_A, PIN_ENCODER_RIGHT_B, GPIO_PIN_NC, PTHREAD_MUTEX_INITIALIZER, 0, 0, 0};
 	
 	// chiamate a GPIO
 	cbMotorGPIOinit(&left_motor);
     cbMotorGPIOinit(&right_motor);
     cbEncoderGPIOinit(&left_encoder);
     cbEncoderGPIOinit(&right_encoder);
-    cbEncoderRegisterISRs(&left_encoder, 100);
-    cbEncoderRegisterISRs(&right_encoder, 100);
+    cbEncoderRegisterISRs(&left_encoder, 0);
+    cbEncoderRegisterISRs(&right_encoder, 0);
 
 	//creazione degli struct per l'odometria
 	odometry_data_t odometry_data_left = {PTHREAD_MUTEX_INITIALIZER, false};
 	odometry_data_t odometry_data_right = {PTHREAD_MUTEX_INITIALIZER, false};
 
 	// creazione degli struct rper gli argument dei thread
-	control_args_t left_motor_control_args = {&left_motor, &left_encoder, MILLIMETERS_PER_TICK_LEFT, &speed_l, &odometry_data_left};
-	control_args_t right_motor_control_args = {&right_motor, &right_encoder, MILLIMETERS_PER_TICK_RIGHT, &speed_r, &odometry_data_right};
+	motor_control_args_t left_motor_control_args = {&left_motor, &left_encoder, MILLIMETERS_PER_TICK_LEFT, &speed_l, &odometry_data_left};
+	motor_control_args_t right_motor_control_args = {&right_motor, &right_encoder, MILLIMETERS_PER_TICK_RIGHT, &speed_r, &odometry_data_right};
 	cartesian_control_args_t cartesian_control_args = {&odometry_data_left, &odometry_data_right};
 	// creazione degli struct relativi ai thread
 	task_t left_motor_control = { .entry_point = motor_control_entry };
@@ -259,7 +261,7 @@ int main(int argc, char* argv[]) {
 	task_t cartesian_control_task = { .entry_point = cartesian_control_entry };
 
 	//creazione dei punti del arco
-	generate_arc_points(waypoints, N_POINTS, 0, 400, 400, -1.57, 3.14);
+	generate_arc_points(waypoints, N_POINTS, 0, 400, 400, -1.57, 0);
 	for(int i = 0; i < N_POINTS; ++i) {
 		//waypoints[i].x = i * 50;
 		//waypoints[i].y = 0;

@@ -109,7 +109,9 @@ void cbEncoderISRa(int gpio, int level, uint32_t event_ts_us, void* enc_gen) {
     enc->level_a = level;
     if (level ^ enc->level_b) {  // Either one of A or B is 1
         enc->direction = forward;
+        pthread_mutex_lock(&enc->tick_lock);
         enc->ticks += enc->direction;
+        pthread_mutex_unlock(&enc->tick_lock);
     } else {
         enc->bad_ticks++;  // Self-diagnostics
     }
@@ -132,7 +134,9 @@ void cbEncoderISRb(int gpio, int level, uint32_t event_ts_us, void* enc_gen) {
     enc->level_b = level;
     if (level ^ enc->level_a) {  // Either one of A or B is 1
         enc->direction = backward;
+        pthread_mutex_lock(&enc->tick_lock);
         enc->ticks += enc->direction;
+        pthread_mutex_unlock(&enc->tick_lock);
     } else {
         enc->bad_ticks++;  // Self-diagnostics
     }
