@@ -21,7 +21,8 @@
 #define MAX_DUTY_CYCLE 0.6
 #define CYCLE_ERROR_TO_DUTY_CYCLE 0.1
 #define OVERALL_ERROR_TO_DUTY_CYCLE 0.1
-#define CYCLE_PERIOD_NS 2e7
+#define MOTOR_CONTROL_PERIOD_NS 2e7
+#define CARTESIAN_CONTROL_PERIOD_NS 3e7
 #define TIMESOURCE CLOCK_MONOTONIC
 
 // definizione degli struct e i loro rispettivi tipi
@@ -64,10 +65,10 @@ typedef struct control_args {
 	odometry_data_t* odometry;
 } control_args_t;
 
-typedef struct odometry_args {
+typedef struct cartesian_control_args {
 	odometry_data_t* left_data;
 	odometry_data_t* right_data;
-} odometry_args_t;
+} cartesian_control_args_t;
 
 // funzioni
 void dl_miss_handler() {
@@ -120,7 +121,7 @@ static timespec_t ts_delta(timespec_t* const before, timespec_t* const now) {
 
 void* motor_control_entry(void* arg) {
 	// impostazione del thread per lo scheduler EDF
-	set_sched_deadline(5e6, CYCLE_PERIOD_NS, CYCLE_PERIOD_NS);
+	set_sched_deadline(5e6, MOTOR_CONTROL_PERIOD_NS, MOTOR_CONTROL_PERIOD_NS);
 
 	// creazioni delle variabili necessarie
 	control_args_t args = *(control_args_t*)arg;
@@ -185,10 +186,11 @@ void* motor_control_entry(void* arg) {
 	pthread_exit(EXIT_SUCCESS);
 }
 
-void* odometry_entry(void* arg) {
-	set_sched_deadline(5e6, CYCLE_PERIOD_NS, CYCLE_PERIOD_NS);
 
-	odometry_args_t args = *(odometry_args_t*)arg;
+void* cartesian_control_entry(void* arg) {
+	set_sched_deadline(10e6, CARTESIAN_CONTROL_PERIOD_NS, CARTESIAN_CONTROL_PERIOD_NS);
+
+	cartesian_control_args_t args = *(cartesian_control_args_t*)arg;
 	odometry_data_t* odometry_data_left = args.left_data;
 	odometry_data_t* odometry_data_right = args.right_data;
 	
@@ -207,17 +209,6 @@ void* odometry_entry(void* arg) {
 
 		printf("x: %f, y:%f, angolo: %f\n", position.x, position.y, position.theta);
 
-		pthread_testcancel();
-		sched_yield();
-	}
-
-	pthread_exit(EXIT_SUCCESS);
-}
-
-void* cartesian_control_entry(void* arg) {
-	set_sched_deadline(5e6, CYCLE_PERIOD_NS, CYCLE_PERIOD_NS);
-	
-	for(;;) {
 		if(cartesian_control())
 			//se è stato completato il percorso
 			pthread_exit(EXIT_SUCCESS);
@@ -225,6 +216,7 @@ void* cartesian_control_entry(void* arg) {
 			sched_yield();
 	}
 }
+
 
 int main(int argc, char* argv[]) {
 	// inizializzazione di GPIO
@@ -260,11 +252,10 @@ int main(int argc, char* argv[]) {
 	// creazione degli struct rper gli argument dei thread
 	control_args_t left_motor_control_args = {&left_motor, &left_encoder, MILLIMETERS_PER_TICK_LEFT, &speed_l, &odometry_data_left};
 	control_args_t right_motor_control_args = {&right_motor, &right_encoder, MILLIMETERS_PER_TICK_RIGHT, &speed_r, &odometry_data_right};
-	odometry_args_t odometry_args = {&odometry_data_left, &odometry_data_right};
+	cartesian_control_args_t cartesian_control_args = {&odometry_data_left, &odometry_data_right};
 	// creazione degli struct relativi ai thread
 	task_t left_motor_control = { .entry_point = motor_control_entry };
 	task_t right_motor_control = { .entry_point = motor_control_entry };
-	task_t odometry_task = { .entry_point = odometry_entry };
 	task_t cartesian_control_task = { .entry_point = cartesian_control_entry };
 
 	//creazione dei punti del arco
@@ -284,12 +275,7 @@ int main(int argc, char* argv[]) {
 		perror("main: pthread_create: right_motor_control");
 		exit(EXIT_FAILURE);
 	}
-	if(pthread_create(&(odometry_task.tid), NULL, odometry_task.entry_point, &odometry_args) != 0) {
-		perror("main: pthread_create: odometry_task");
-		exit(EXIT_FAILURE);
-	}
-
-	if(pthread_create(&(cartesian_control_task.tid), NULL, cartesian_control_task.entry_point, NULL) != 0) {
+	if(pthread_create(&(cartesian_control_task.tid), NULL, cartesian_control_task.entry_point, &cartesian_control_args) != 0) {
 		perror("main: pthread_create: cartesian_control_task");
 		exit(EXIT_FAILURE);
 	}
@@ -306,7 +292,7 @@ int main(int argc, char* argv[]) {
 	puts("Terminazione...");
 	pthread_cancel(left_motor_control.tid);
 	pthread_cancel(right_motor_control.tid);
-	pthread_cancel(odometry_task.tid);
+	pthread_cancel(cartesian_control_task.tid);
     cbMotorReset(&left_motor);
     cbMotorReset(&right_motor);
     gpioTerminate();

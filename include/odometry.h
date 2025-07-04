@@ -20,7 +20,6 @@ extern float t2[3][3];
 extern float temp[3][3];
 
 typedef struct {
-    pthread_mutex_t lock;
     float x;
     float y;
     float theta;

@@ -66,11 +66,8 @@ void findNewPose(int l_ticks_odo, int r_ticks_odo) {
         for (int c = 0; c < 3; c++)
             pose[r][c] = newPose[r][c];
 
-    // salvataggio della posizione
-    if (pthread_mutex_trylock(&position.lock) == 0) {		
+    // salvataggio della posizione	
     	position.x = pose[0][2];
         position.y = pose[1][2];
         position.theta = atan2(pose[1][0], pose[0][0]);
-        pthread_mutex_unlock(&position.lock);
-	}
 }
