@@ -3,23 +3,16 @@
 #include <math.h>
 
 Point waypoints[N_POINTS];      // array di waypoints
-int current_position;           // posizione corrente nel percorso
 float speed;
 float speed_l;                  // velocità ruota sinistra
 float speed_r;                  // velocità ruota destra
 
 void generate_arc_points(Point* points, int num_points, float cx, float cy, float radius, float start_angle, float end_angle) {
-    Point temp[num_points];
     for (int i = 0; i < num_points; ++i) {
         float t = (float)i / (num_points - 1);
         float angle = start_angle + t * (end_angle - start_angle);
-        temp[i].x = cx + radius * cos(angle);
-        temp[i].y = cy + radius * sin(angle);
-    }
-
-    for(int i = num_points - 1, j = 0; i >= 0; i--, j++){
-        points[j] = temp[i];
-        printf("punto %d: (%f, %f)\n", j, points[j].x, points[j].y);
+        points[i].x = cx + radius * cos(angle);
+        points[i].y = cy + radius * sin(angle);
     }
 }
 
@@ -45,7 +38,7 @@ int nearest_point_position(Point* waypoints, int num_points, float* pose_dof){
 bool cartesian_control() {
     /* CARTESIAN CONTROLLER */
     // POSIZIONE CORRENTE REALE (da odometria) APPROSSIMATA AL PUNTO della TRAIETTORIA PIU' VICINO
-    double pose_dof[3];
+    float pose_dof[3];
     if (pthread_mutex_trylock(&position.lock) == 0) {	
         pose_dof[0] = position.x;
         pose_dof[1] = position.y;
@@ -54,7 +47,7 @@ bool cartesian_control() {
 	} else
         return false;
 
-    current_position = nearest_point_position(waypoints, N_POINTS, pose_dof);
+    int current_position = nearest_point_position(waypoints, N_POINTS, pose_dof);
     printf("siamo al punto: %d\n", current_position); 
     if(current_position >= N_POINTS - 3){
         // FINE

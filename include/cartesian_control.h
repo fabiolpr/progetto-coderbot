@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 #define ANGLE_TOLLERANCE 0.025 //angolo minimo considerato come errore
-#define N_POINTS 20 // numero di punti
+#define N_POINTS 50 // numero di punti
 
 // Definizione del tipo Point
 typedef struct {

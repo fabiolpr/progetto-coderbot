@@ -21,7 +21,7 @@
 #define MAX_DUTY_CYCLE 0.6
 #define CYCLE_ERROR_TO_DUTY_CYCLE 0.1
 #define OVERALL_ERROR_TO_DUTY_CYCLE 0.1
-#define CYCLE_PERIOD_NS 5e7
+#define CYCLE_PERIOD_NS 2e7
 #define TIMESOURCE CLOCK_MONOTONIC
 
 // definizione degli struct e i loro rispettivi tipi
@@ -120,7 +120,7 @@ static timespec_t ts_delta(timespec_t* const before, timespec_t* const now) {
 
 void* motor_control_entry(void* arg) {
 	// impostazione del thread per lo scheduler EDF
-	set_sched_deadline(1e5, CYCLE_PERIOD_NS, CYCLE_PERIOD_NS);
+	set_sched_deadline(5e6, CYCLE_PERIOD_NS, CYCLE_PERIOD_NS);
 
 	// creazioni delle variabili necessarie
 	control_args_t args = *(control_args_t*)arg;
@@ -186,7 +186,7 @@ void* motor_control_entry(void* arg) {
 }
 
 void* odometry_entry(void* arg) {
-	set_sched_deadline(1e5, CYCLE_PERIOD_NS, CYCLE_PERIOD_NS);
+	set_sched_deadline(5e6, CYCLE_PERIOD_NS, CYCLE_PERIOD_NS);
 
 	odometry_args_t args = *(odometry_args_t*)arg;
 	odometry_data_t* odometry_data_left = args.left_data;
@@ -215,7 +215,7 @@ void* odometry_entry(void* arg) {
 }
 
 void* cartesian_control_entry(void* arg) {
-	set_sched_deadline(1e5, CYCLE_PERIOD_NS, CYCLE_PERIOD_NS);
+	set_sched_deadline(5e6, CYCLE_PERIOD_NS, CYCLE_PERIOD_NS);
 	
 	for(;;) {
 		if(cartesian_control())
@@ -268,7 +268,12 @@ int main(int argc, char* argv[]) {
 	task_t cartesian_control_task = { .entry_point = cartesian_control_entry };
 
 	//creazione dei punti del arco
-	generate_arc_points(&waypoints, N_POINTS, 500, 0, 500, 0, 1);
+	generate_arc_points(waypoints, N_POINTS, 0, 400, 400, -1.57, 3.14);
+	for(int i = 0; i < N_POINTS; ++i) {
+		//waypoints[i].x = i * 50;
+		//waypoints[i].y = 0;
+		printf("punto %d: (%f, %f)\n", i, waypoints[i].x, waypoints[i].y);
+	}
 
 	// creazione dei thread
 	if(pthread_create(&(left_motor_control.tid), NULL, left_motor_control.entry_point, &left_motor_control_args) != 0) {
