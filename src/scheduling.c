@@ -308,7 +308,7 @@ int main(int argc, char* argv[]) {
 	};
 
 	//creazione dei punti del arco
-	generate_arc_points(waypoints, N_POINTS, 0, 400, 400, -1.57, 1.57);
+	generate_arc_points(waypoints, N_POINTS, 0, -400, 400, 1.57, -1.57);
 	for(int i = 0; i < N_POINTS; ++i) {
 		//waypoints[i].x = i * 50;
 		//waypoints[i].y = 0;
