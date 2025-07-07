@@ -56,9 +56,8 @@ bool cartesian_control() {
     }
 
     // waypoints[current_point + 3] POSIZIONE che si PUNTA (per evitare errori, non troppo vicina, quindi +3 posizioni)
-    // waypoints[current_point].XY POSIZIONE CORRENTE REALE (da odometria) APPROSSIMATA AL PUNTO della TRAIETTORIA PIU' VICINO
-    float delta_x = waypoints[current_point + 3].x - waypoints[current_point].x;
-    float delta_y = waypoints[current_point + 3].y - waypoints[current_point].y;
+    float delta_x = waypoints[current_point + 3].x - pose_dof[0];
+    float delta_y = waypoints[current_point + 3].y - pose_dof[1];
     float desired_theta = atan2(delta_y, delta_x); 
     float delta_theta_c = desired_theta - pose_dof[2]; // errore dell'angolo
 

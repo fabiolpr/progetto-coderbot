@@ -220,7 +220,10 @@ void* cartesian_control_entry(void* arg) {
 
 		int ticks_left = odometry_data_left->ticks;
 		int ticks_right = odometry_data_right->ticks;
-		bool is_delta_large_enough = ticks_left * ticks_left + ticks_right * ticks_right > 100;
+		float left_mm = ticks_left * MILLIMETERS_PER_TICK_LEFT;
+		float right_mm = ticks_right * MILLIMETERS_PER_TICK_RIGHT;
+		float average_mm = (left_mm + right_mm) / 2;
+		bool is_delta_large_enough = average_mm > MINIMUM_DELTA_MILLIMETERS;
 		
 		if(is_delta_large_enough) {
 			odometry_data_right->are_ticks_reset = true;
@@ -231,7 +234,7 @@ void* cartesian_control_entry(void* arg) {
 		pthread_mutex_unlock(&odometry_data_right->lock);
 
 		if(is_delta_large_enough) {
-			findNewPose(ticks_left, ticks_right);
+			findNewPose(left_mm, right_mm, average_mm);
 
 			printf("x: %f, y:%f, angolo: %f\n", position.x, position.y, position.theta);
 

@@ -5,8 +5,10 @@
 
 #define MILLIMETERS_PER_TICK_LEFT 0.1114790994
 #define MILLIMETERS_PER_TICK_RIGHT 0.1117455841
+#define MINIMUM_DELTA_MILLIMETERS 5
 #define B 120
 #define THRESHOLD 0.005
+#define SQUARE(X) X * X
 
 extern float mm_sx;
 extern float mm_dx;
@@ -29,6 +31,6 @@ extern position_t position;
 
 
 void moltiplica_matrici_3x3(double matA[3][3], double matB[3][3], double result[3][3]);
-void findNewPose(int l_ticks_odo, int r_ticks_odo);
+void findNewPose(float mm_sx, float mm_dx, float average_mm);
 
 #endif // ODOMETRY_H

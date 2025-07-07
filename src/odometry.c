@@ -25,11 +25,7 @@ void moltiplica_matrici_3x3(double matA[3][3], double matB[3][3], double result[
 }
 
 /* ODOMETRIA */
-void findNewPose(int l_ticks_odo, int r_ticks_odo) {
-    // calcolo MILLIMETRI percorsi
-    mm_sx = l_ticks_odo * MILLIMETERS_PER_TICK_LEFT; // ruota sinistra
-    mm_dx = r_ticks_odo * MILLIMETERS_PER_TICK_RIGHT; // ruota destra
-
+void findNewPose(float mm_sx, float mm_dx, float average_mm) {
     // calcolo ANGOLO
     double delta_theta = -(mm_sx - mm_dx) / B;
 
@@ -37,7 +33,7 @@ void findNewPose(int l_ticks_odo, int r_ticks_odo) {
     if (fabs(delta_theta) < THRESHOLD) {
         // movimento: DRITTO
         // calcolo matrice di ROTOTRASLAZIONE corrente
-        rt[0][0] = 1; rt[0][1] = 0; rt[0][2] = (mm_sx + mm_dx) / 2;
+        rt[0][0] = 1; rt[0][1] = 0; rt[0][2] = average_mm;
         rt[1][0] = 0; rt[1][1] = 1; rt[1][2] = 0;
         rt[2][0] = 0; rt[2][1] = 0; rt[2][2] = 1;
     } else {
