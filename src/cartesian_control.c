@@ -49,8 +49,6 @@ bool cartesian_control() {
     printf("siamo al punto: %d\n", current_position); 
     if(current_position >= N_POINTS - 3){
         // FINE
-        speed_l = 0;
-        speed_r = 0;
         return true;
     }
 

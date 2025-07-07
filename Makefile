@@ -16,7 +16,7 @@ OBJS := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
 EXE  := $(BUILD_DIR)/coderbot.exe
 
 # obbiettivo di default
-all: $(EXE)
+all: clean $(EXE)
 
 # linking dei file oggetto nel file eseguibile
 $(EXE): $(OBJS)

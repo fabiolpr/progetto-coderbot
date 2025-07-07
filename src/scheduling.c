@@ -23,7 +23,6 @@
 #define OVERALL_ERROR_TO_DUTY_CYCLE 5e5
 #define MOTOR_CONTROL_PERIOD_NS 2e6
 #define CARTESIAN_CONTROL_PERIOD_NS 1e7
-#define TIMESOURCE CLOCK_MONOTONIC
 
 // definizione degli struct e i loro rispettivi tipi
 struct sched_attr {
@@ -46,9 +45,17 @@ struct sched_attr {
 
 typedef struct timespec timespec_t;
 
+typedef struct stopwatch {
+	clockid_t time_source;
+	long delta;
+	timespec_t start;
+	timespec_t end;
+} stopwatch_t;
+
 typedef struct task {
-	pthread_t tid;
 	void* (*entry_point)(void*);
+	long worst_execution_time;
+	pthread_t tid;
 } task_t;
 
 typedef struct odometry_data {
@@ -63,11 +70,13 @@ typedef struct motor_control_args {
 	float millimeters_per_tick;
 	float* speed;
 	odometry_data_t* odometry;
+	long* worst_execution_time;
 } motor_control_args_t;
 
 typedef struct cartesian_control_args {
 	odometry_data_t* left_data;
 	odometry_data_t* right_data;
+	long* worst_execution_time;
 } cartesian_control_args_t;
 
 // funzioni
@@ -96,32 +105,35 @@ static inline int set_sched_deadline(uint64_t runtime_ns,
 	return(0);
 }
 
-static void ts_update(timespec_t* const upd) {
-	if(clock_gettime(TIMESOURCE, upd) < 0) {
-		perror("gettime: ");
+static void find_current_time(stopwatch_t* stopwatch) {
+	if(clock_gettime(stopwatch->time_source, &stopwatch->start) < 0) {
+		perror("gettime");
 		exit(EXIT_FAILURE);
 	}
 }
 
-static timespec_t ts_delta(timespec_t* const before, timespec_t* const now) {
-	timespec_t diff;
-	//assegna l'ultimo tempo calcolato a "before"
-	*before = *now;
+static void update_stopwatch(stopwatch_t* stopwatch) {
+	//assegna l'ultimo tempo calcolato ad "end"
+	stopwatch->end = stopwatch->start;
 	//sovrascrivi l'ultimo tempo con il nuovo tempo attuale
-	ts_update(now);
-	//trova il delta e restituiscilo
-	diff.tv_sec = now->tv_sec - before->tv_sec;
-	diff.tv_nsec = now->tv_nsec - before->tv_nsec;
-    if (diff.tv_nsec < 0) {
-        --diff.tv_sec;
-        diff.tv_nsec += 1e9; //' +1sec
-    }
-	return diff;
+	find_current_time(stopwatch);
+	//trova il delta
+	int32_t delta_seconds = stopwatch->start.tv_sec - stopwatch->end.tv_sec;
+	stopwatch->delta = stopwatch->start.tv_nsec + delta_seconds * 1e9 - stopwatch->end.tv_nsec;
+}
+
+static void update_worst_time(stopwatch_t* stopwatch, long* worst_time) {
+		update_stopwatch(stopwatch);
+		if(*worst_time < stopwatch->delta)
+			*worst_time = stopwatch->delta;
 }
 
 void* motor_control_entry(void* arg) {
 	// impostazione del thread per lo scheduler EDF
 	set_sched_deadline(1e6, MOTOR_CONTROL_PERIOD_NS, MOTOR_CONTROL_PERIOD_NS);
+	//creazione del cronometro per la task
+	stopwatch_t task_stopwatch = {CLOCK_THREAD_CPUTIME_ID, 0};
+	find_current_time(&task_stopwatch);
 
 	// creazioni delle variabili necessarie
 	motor_control_args_t args = *(motor_control_args_t*)arg;
@@ -131,18 +143,18 @@ void* motor_control_entry(void* arg) {
 	float target;
 	float duty_cycle;
 	cbDir_t direction;
-	timespec_t before, now, difference;
-	ts_update(&now);
+	stopwatch_t tick_stopwatch = {CLOCK_MONOTONIC, 0};
+	find_current_time(&tick_stopwatch);
 	// inizio ciclo
 	for(;;) {
 		//salvo i tick percorsi e il delta tempo tra questo ciclo e il precedente
 		pthread_mutex_lock(&args.encoder->tick_lock);
-		difference = ts_delta(&before, &now);
+		update_stopwatch(&tick_stopwatch);
 		int ticks = args.encoder->ticks;
 		args.encoder->ticks = 0;
         pthread_mutex_unlock(&args.encoder->tick_lock);
 
-		target = *(args.speed) * (difference.tv_nsec / 1e9) / args.millimeters_per_tick;
+		target = *(args.speed) * (tick_stopwatch.delta / 1e9) / args.millimeters_per_tick;
 
 		//aggiorno i dati per la posizione e l'angolazione
 		ticks_since_odometry_update += ticks;
@@ -177,6 +189,8 @@ void* motor_control_entry(void* arg) {
 
 		printf("Duty cycle %f, errore %f\n", duty_cycle, overall_error_ticks);
 
+		//aggiorno il peggiore tempo di esecuzione
+		update_worst_time(&task_stopwatch, args.worst_execution_time);
 		// aspetto il prossimo periodo oppure termino il thread se richiesto
 		pthread_testcancel();
 		sched_yield();
@@ -187,7 +201,11 @@ void* motor_control_entry(void* arg) {
 
 
 void* cartesian_control_entry(void* arg) {
+	// impostazione del thread per lo scheduler EDF
 	set_sched_deadline(1e6, CARTESIAN_CONTROL_PERIOD_NS, CARTESIAN_CONTROL_PERIOD_NS);
+	//creazione del cronometro per la task
+	stopwatch_t task_stopwatch = {CLOCK_THREAD_CPUTIME_ID, 0};
+	find_current_time(&task_stopwatch);
 
 	cartesian_control_args_t args = *(cartesian_control_args_t*)arg;
 	odometry_data_t* odometry_data_left = args.left_data;
@@ -217,11 +235,14 @@ void* cartesian_control_entry(void* arg) {
 
 			printf("x: %f, y:%f, angolo: %f\n", position.x, position.y, position.theta);
 
-			if(cartesian_control())
+			if(cartesian_control()) {
 				//se è stato completato il percorso
+				update_worst_time(&task_stopwatch, args.worst_execution_time);
 				pthread_exit(EXIT_SUCCESS);
+			}
 		}
 
+		update_worst_time(&task_stopwatch, args.worst_execution_time);
 		sched_yield();
 	}
 }
@@ -258,17 +279,36 @@ int main(int argc, char* argv[]) {
 	odometry_data_t odometry_data_left = {PTHREAD_MUTEX_INITIALIZER, false};
 	odometry_data_t odometry_data_right = {PTHREAD_MUTEX_INITIALIZER, false};
 
-	// creazione degli struct rper gli argument dei thread
-	motor_control_args_t left_motor_control_args = {&left_motor, &left_encoder, MILLIMETERS_PER_TICK_LEFT, &speed_l, &odometry_data_left};
-	motor_control_args_t right_motor_control_args = {&right_motor, &right_encoder, MILLIMETERS_PER_TICK_RIGHT, &speed_r, &odometry_data_right};
-	cartesian_control_args_t cartesian_control_args = {&odometry_data_left, &odometry_data_right};
 	// creazione degli struct relativi ai thread
-	task_t left_motor_control = { .entry_point = motor_control_entry };
-	task_t right_motor_control = { .entry_point = motor_control_entry };
-	task_t cartesian_control_task = { .entry_point = cartesian_control_entry };
+	task_t left_motor_control_task = {motor_control_entry, 0};
+	task_t right_motor_control_task = {motor_control_entry, 0};
+	task_t cartesian_control_task = {cartesian_control_entry, 0};
+
+	// creazione degli struct rper gli argument dei thread
+	motor_control_args_t left_motor_control_args ={
+		&left_motor,
+		&left_encoder,
+		MILLIMETERS_PER_TICK_LEFT,
+		&speed_l,
+		&odometry_data_left,
+		&left_motor_control_task.worst_execution_time
+	};
+	motor_control_args_t right_motor_control_args = {
+		&right_motor,
+		&right_encoder,
+		MILLIMETERS_PER_TICK_RIGHT,
+		&speed_r,
+		&odometry_data_right,
+		&right_motor_control_task.worst_execution_time
+	};
+	cartesian_control_args_t cartesian_control_args = {
+		&odometry_data_left,
+		&odometry_data_right,
+		&cartesian_control_task.worst_execution_time
+	};
 
 	//creazione dei punti del arco
-	generate_arc_points(waypoints, N_POINTS, 0, -400, 400, 1.57, -1.57);
+	generate_arc_points(waypoints, N_POINTS, 0, 400, 400, -1.57, 1.57);
 	for(int i = 0; i < N_POINTS; ++i) {
 		//waypoints[i].x = i * 50;
 		//waypoints[i].y = 0;
@@ -276,12 +316,12 @@ int main(int argc, char* argv[]) {
 	}
 
 	// creazione dei thread
-	if(pthread_create(&(left_motor_control.tid), NULL, left_motor_control.entry_point, &left_motor_control_args) != 0) {
-		perror("main: pthread_create: left_motor_control");
+	if(pthread_create(&(left_motor_control_task.tid), NULL, left_motor_control_task.entry_point, &left_motor_control_args) != 0) {
+		perror("main: pthread_create: left_motor_control_task");
 		exit(EXIT_FAILURE);
 	}
-	if(pthread_create(&(right_motor_control.tid), NULL, right_motor_control.entry_point, &right_motor_control_args) != 0) {
-		perror("main: pthread_create: right_motor_control");
+	if(pthread_create(&(right_motor_control_task.tid), NULL, right_motor_control_task.entry_point, &right_motor_control_args) != 0) {
+		perror("main: pthread_create: right_motor_control_task");
 		exit(EXIT_FAILURE);
 	}
 	if(pthread_create(&(cartesian_control_task.tid), NULL, cartesian_control_task.entry_point, &cartesian_control_args) != 0) {
@@ -299,12 +339,15 @@ int main(int argc, char* argv[]) {
 
 	// terminazione del programma
 	puts("Terminazione...");
-	pthread_cancel(left_motor_control.tid);
-	pthread_cancel(right_motor_control.tid);
+	pthread_cancel(left_motor_control_task.tid);
+	pthread_cancel(right_motor_control_task.tid);
 	pthread_cancel(cartesian_control_task.tid);
     cbMotorReset(&left_motor);
     cbMotorReset(&right_motor);
     gpioTerminate();
 	puts("Fine");
+	printf("tempo peggiore della task di controllo del motore sinistro: %ld ns\n", left_motor_control_task.worst_execution_time);
+	printf("tempo peggiore della task di controllo del motore destro: %ld  ns\n", right_motor_control_task.worst_execution_time);
+	printf("tempo peggiore della task di controllo cartesiano: %ld ns\n", cartesian_control_task.worst_execution_time);
 	exit(EXIT_SUCCESS);
 }
