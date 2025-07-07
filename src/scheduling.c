@@ -19,10 +19,10 @@
 
 // macro
 #define MAX_DUTY_CYCLE 0.6
-#define CYCLE_ERROR_TO_DUTY_CYCLE 0.1
-#define OVERALL_ERROR_TO_DUTY_CYCLE 0.05
-#define MOTOR_CONTROL_PERIOD_NS 2e7
-#define CARTESIAN_CONTROL_PERIOD_NS 3e7
+#define CYCLE_ERROR_TO_DUTY_CYCLE 15e5
+#define OVERALL_ERROR_TO_DUTY_CYCLE 5e5
+#define MOTOR_CONTROL_PERIOD_NS 2e6
+#define CARTESIAN_CONTROL_PERIOD_NS 1e7
 #define TIMESOURCE CLOCK_MONOTONIC
 
 // definizione degli struct e i loro rispettivi tipi
@@ -126,9 +126,9 @@ void* motor_control_entry(void* arg) {
 	// creazioni delle variabili necessarie
 	motor_control_args_t args = *(motor_control_args_t*)arg;
 	odometry_data_t* odometry = args.odometry;
-	int overall_error_ticks = 0;
+	float overall_error_ticks = 0;
 	int ticks_since_odometry_update = 0;
-	int target;
+	float target;
 	float duty_cycle;
 	cbDir_t direction;
 	timespec_t before, now, difference;
@@ -136,7 +136,6 @@ void* motor_control_entry(void* arg) {
 	// inizio ciclo
 	for(;;) {
 		//salvo i tick percorsi e il delta tempo tra questo ciclo e il precedente
-		
 		pthread_mutex_lock(&args.encoder->tick_lock);
 		difference = ts_delta(&before, &now);
 		int ticks = args.encoder->ticks;
@@ -146,26 +145,25 @@ void* motor_control_entry(void* arg) {
 		target = *(args.speed) * (difference.tv_nsec / 1e9) / args.millimeters_per_tick;
 
 		//aggiorno i dati per la posizione e l'angolazione
+		ticks_since_odometry_update += ticks;
 		if (pthread_mutex_trylock(&odometry->lock) == 0) {
 			if(odometry->are_ticks_reset) {
-				ticks_since_odometry_update = ticks;
+				ticks_since_odometry_update -= odometry->ticks;
 				odometry->are_ticks_reset = false;
-			} else {
-				ticks_since_odometry_update += ticks;
 			}
 			odometry->ticks = ticks_since_odometry_update;
     		pthread_mutex_unlock(&odometry->lock);
 		}
 
 		// calcolo gli errori relativi a quanti tick ho percorso
-		int cycle_error_ticks = target - ticks;
+		float cycle_error_ticks = target - ticks;
 		overall_error_ticks += cycle_error_ticks;
 
 		// imposto il duty cycle per rimediare al errore
-		duty_cycle = cycle_error_ticks * CYCLE_ERROR_TO_DUTY_CYCLE;
-		duty_cycle += overall_error_ticks * OVERALL_ERROR_TO_DUTY_CYCLE;
+		duty_cycle = cycle_error_ticks * CYCLE_ERROR_TO_DUTY_CYCLE / MOTOR_CONTROL_PERIOD_NS;
+		duty_cycle += overall_error_ticks * OVERALL_ERROR_TO_DUTY_CYCLE / MOTOR_CONTROL_PERIOD_NS;
 
-		if(cycle_error_ticks < 0) {
+		if(duty_cycle < 0) {
 			duty_cycle = -duty_cycle;
 			direction = backward;
 		}
@@ -177,7 +175,7 @@ void* motor_control_entry(void* arg) {
 		// imposto la velocità e direzione del motore
 		cbMotorMove(args.motor, direction, duty_cycle);
 
-		printf("Duty cycle %f, errore %d\n", duty_cycle, overall_error_ticks);
+		printf("Duty cycle %f, errore %f\n", duty_cycle, overall_error_ticks);
 
 		// aspetto il prossimo periodo oppure termino il thread se richiesto
 		pthread_testcancel();
@@ -189,32 +187,42 @@ void* motor_control_entry(void* arg) {
 
 
 void* cartesian_control_entry(void* arg) {
-	set_sched_deadline(10e6, CARTESIAN_CONTROL_PERIOD_NS, CARTESIAN_CONTROL_PERIOD_NS);
+	set_sched_deadline(1e6, CARTESIAN_CONTROL_PERIOD_NS, CARTESIAN_CONTROL_PERIOD_NS);
 
 	cartesian_control_args_t args = *(cartesian_control_args_t*)arg;
 	odometry_data_t* odometry_data_left = args.left_data;
 	odometry_data_t* odometry_data_right = args.right_data;
 	
+	cartesian_control();
 	for(;;) {
-	
+		
+		//prendere i lock insieme per evitare discrepanze di tick tra le due ruote
 		pthread_mutex_lock(&odometry_data_left->lock);
 		pthread_mutex_lock(&odometry_data_right->lock);
 
-		findNewPose(odometry_data_left->ticks, odometry_data_right->ticks);
-		//la variabile are_ticks_reset non è duplicata, le singole ruote dovranno impostarla a false indipendentemente
-		odometry_data_left->are_ticks_reset = true;
-		odometry_data_right->are_ticks_reset = true;
-			
+		int ticks_left = odometry_data_left->ticks;
+		int ticks_right = odometry_data_right->ticks;
+		bool is_delta_large_enough = ticks_left * ticks_left + ticks_right * ticks_right > 100;
+		
+		if(is_delta_large_enough) {
+			odometry_data_right->are_ticks_reset = true;
+			odometry_data_left->are_ticks_reset = true;
+		}
+
 		pthread_mutex_unlock(&odometry_data_left->lock);
 		pthread_mutex_unlock(&odometry_data_right->lock);
 
-		printf("x: %f, y:%f, angolo: %f\n", position.x, position.y, position.theta);
+		if(is_delta_large_enough) {
+			findNewPose(ticks_left, ticks_right);
 
-		if(cartesian_control())
-			//se è stato completato il percorso
-			pthread_exit(EXIT_SUCCESS);
-		else
-			sched_yield();
+			printf("x: %f, y:%f, angolo: %f\n", position.x, position.y, position.theta);
+
+			if(cartesian_control())
+				//se è stato completato il percorso
+				pthread_exit(EXIT_SUCCESS);
+		}
+
+		sched_yield();
 	}
 }
 
@@ -260,7 +268,7 @@ int main(int argc, char* argv[]) {
 	task_t cartesian_control_task = { .entry_point = cartesian_control_entry };
 
 	//creazione dei punti del arco
-	generate_arc_points(waypoints, N_POINTS, 0, 400, 400, -1.57, 0);
+	generate_arc_points(waypoints, N_POINTS, 0, -400, 400, 1.57, -1.57);
 	for(int i = 0; i < N_POINTS; ++i) {
 		//waypoints[i].x = i * 50;
 		//waypoints[i].y = 0;

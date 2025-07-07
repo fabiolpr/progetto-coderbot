@@ -4,20 +4,20 @@
 float mm_sx;                                                        // MILLIMETRI PERCORSI dalla RUOTA
 float mm_dx;
 
-float pose[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};              // MATRICE per POSE (totale)
-float newPose[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};           // MATRICE per POSE (corrente)
-float rt[3][3], r[3][3], t1[3][3], t2[3][3], temp[3][3];           // MATRICI di SUPPORTO
+double pose[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};              // MATRICE per POSE (totale)
+double newPose[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};           // MATRICE per POSE (corrente)
+double rt[3][3], r[3][3], t1[3][3], t2[3][3], temp[3][3];           // MATRICI di SUPPORTO
                                                                  // (rototraslazione, rotazione, traslazione al CIR, traslazione dal CIR, temporanea)
 
 // struct della posizione
 position_t position = {PTHREAD_MUTEX_INITIALIZER, 0, 0, 0};
 
 // Moltiplica due matrici 3x3: C = A * B
-void moltiplica_matrici_3x3(float matA[3][3], float matB[3][3], float result[3][3]) {
+void moltiplica_matrici_3x3(double matA[3][3], double matB[3][3], double result[3][3]) {
     for (int i = 0; i < 3; i++) {
-        float a0 = matA[i][0];
-        float a1 = matA[i][1];
-        float a2 = matA[i][2];
+        double a0 = matA[i][0];
+        double a1 = matA[i][1];
+        double a2 = matA[i][2];
         result[i][0] = a0 * matB[0][0] + a1 * matB[1][0] + a2 * matB[2][0];
         result[i][1] = a0 * matB[0][1] + a1 * matB[1][1] + a2 * matB[2][1];
         result[i][2] = a0 * matB[0][2] + a1 * matB[1][2] + a2 * matB[2][2];
@@ -31,7 +31,7 @@ void findNewPose(int l_ticks_odo, int r_ticks_odo) {
     mm_dx = r_ticks_odo * MILLIMETERS_PER_TICK_RIGHT; // ruota destra
 
     // calcolo ANGOLO
-    float delta_theta = -(mm_sx - mm_dx) / B;
+    double delta_theta = -(mm_sx - mm_dx) / B;
 
     // SOGLIA (ticks sinistra e destra mai esattamente uguali, anche se dritto)
     if (fabs(delta_theta) < THRESHOLD) {
@@ -42,7 +42,7 @@ void findNewPose(int l_ticks_odo, int r_ticks_odo) {
         rt[2][0] = 0; rt[2][1] = 0; rt[2][2] = 1;
     } else {
         // movimento: CURVANDO
-        float d = (mm_dx / delta_theta) - (B / 2);
+        double d = (mm_dx / delta_theta) - (B / 2);
         // TRASLAZIONE al CIR
         t1[0][0] = 1; t1[0][1] = 0; t1[0][2] = 0;
         t1[1][0] = 0; t1[1][1] = 1; t1[1][2] = -d;

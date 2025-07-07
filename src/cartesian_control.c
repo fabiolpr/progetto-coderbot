@@ -4,8 +4,8 @@
 
 Point waypoints[N_POINTS];      // array di waypoints
 float speed;
-float speed_l;                  // velocità ruota sinistra
-float speed_r;                  // velocità ruota destra
+float speed_l = 0;                  // velocità ruota sinistra
+float speed_r = 0;                  // velocità ruota destra
 
 void generate_arc_points(Point* points, int num_points, float cx, float cy, float radius, float start_angle, float end_angle) {
     for (int i = 0; i < num_points; ++i) {
