@@ -19,10 +19,12 @@
 
 // macro
 #define MAX_DUTY_CYCLE 0.6
+#define MINIMUM_SPEED 5
+#define MAXIMUM_SPEED 60
 #define CYCLE_ERROR_TO_DUTY_CYCLE 15e5
 #define OVERALL_ERROR_TO_DUTY_CYCLE 5e5
 #define MOTOR_CONTROL_PERIOD_NS 2e6
-#define CARTESIAN_CONTROL_PERIOD_NS 1e7
+#define CARTESIAN_CONTROL_PERIOD_NS 1e7 
 
 // definizione degli struct e i loro rispettivi tipi
 struct sched_attr {
@@ -65,6 +67,7 @@ typedef struct odometry_data {
 } odometry_data_t;
 
 typedef struct motor_control_args {
+	char* motor_name;
 	cbMotor_t* motor;
 	cbEncoder_t* encoder;
 	float millimeters_per_tick;
@@ -128,11 +131,12 @@ static void update_worst_time(stopwatch_t* stopwatch, long* worst_time) {
 			*worst_time = stopwatch->delta;
 }
 
+
 void* motor_control_entry(void* arg) {
 	// impostazione del thread per lo scheduler EDF
 	set_sched_deadline(1e6, MOTOR_CONTROL_PERIOD_NS, MOTOR_CONTROL_PERIOD_NS);
 	//creazione del cronometro per la task
-	stopwatch_t task_stopwatch = {CLOCK_THREAD_CPUTIME_ID, 0};
+	stopwatch_t task_stopwatch = {.time_source = CLOCK_THREAD_CPUTIME_ID, .delta = 0};
 	find_current_time(&task_stopwatch);
 
 	// creazioni delle variabili necessarie
@@ -143,7 +147,7 @@ void* motor_control_entry(void* arg) {
 	float target;
 	float duty_cycle;
 	cbDir_t direction;
-	stopwatch_t tick_stopwatch = {CLOCK_MONOTONIC, 0};
+	stopwatch_t tick_stopwatch = {.time_source = CLOCK_MONOTONIC, .delta = 0};
 	find_current_time(&tick_stopwatch);
 	// inizio ciclo
 	for(;;) {
@@ -187,7 +191,7 @@ void* motor_control_entry(void* arg) {
 		// imposto la velocità e direzione del motore
 		cbMotorMove(args.motor, direction, duty_cycle);
 
-		printf("Duty cycle %f, errore %f\n", duty_cycle, overall_error_ticks);
+		printf("Motore: \"%s\", duty cycle %f, errore %f\n", args.motor_name, duty_cycle, overall_error_ticks);
 
 		//aggiorno il peggiore tempo di esecuzione
 		update_worst_time(&task_stopwatch, args.worst_execution_time);
@@ -204,7 +208,7 @@ void* cartesian_control_entry(void* arg) {
 	// impostazione del thread per lo scheduler EDF
 	set_sched_deadline(1e6, CARTESIAN_CONTROL_PERIOD_NS, CARTESIAN_CONTROL_PERIOD_NS);
 	//creazione del cronometro per la task
-	stopwatch_t task_stopwatch = {CLOCK_THREAD_CPUTIME_ID, 0};
+	stopwatch_t task_stopwatch = {.time_source = CLOCK_THREAD_CPUTIME_ID, .delta = 0};
 	find_current_time(&task_stopwatch);
 
 	cartesian_control_args_t args = *(cartesian_control_args_t*)arg;
@@ -237,6 +241,7 @@ void* cartesian_control_entry(void* arg) {
 			findNewPose(left_mm, right_mm, average_mm);
 
 			printf("x: %f, y:%f, angolo: %f\n", position.x, position.y, position.theta);
+			printf("Siamo al punto: %d\n", current_point); 
 
 			if(cartesian_control()) {
 				//se è stato completato il percorso
@@ -252,23 +257,28 @@ void* cartesian_control_entry(void* arg) {
 
 
 int main(int argc, char* argv[]) {
-	// inizializzazione di GPIO
-	if (gpioInitialise() < 0) {
-        fprintf(stderr, "Errore inizializzazione GPIO\n");
-        exit(EXIT_FAILURE);
-    }
 	// lettura del valore passato al programma
     if (argc < 2) {
         printf("Uso: %s <numero intero corrispondente ai millimetri al secondo da percorrere>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
     speed = atof(argv[1]);
+	if(speed < MINIMUM_SPEED || speed > MAXIMUM_SPEED) {
+		printf("la velocità deve essere tra %d e %d, estremi inclusi\n", MINIMUM_SPEED, MAXIMUM_SPEED);
+		exit(EXIT_FAILURE);
+	}
+
+	// inizializzazione di GPIO
+	if (gpioInitialise() < 0) {
+        fprintf(stderr, "Errore inizializzazione GPIO\n");
+        exit(EXIT_FAILURE);
+    }
 
 	// creazione degli struct relativi a motori e encoder
 	cbMotor_t left_motor = {PIN_LEFT_FORWARD, PIN_LEFT_BACKWARD};
 	cbMotor_t right_motor = {PIN_RIGHT_FORWARD, PIN_RIGHT_BACKWARD};
-	cbEncoder_t left_encoder = {PIN_ENCODER_LEFT_A, PIN_ENCODER_LEFT_B, GPIO_PIN_NC, PTHREAD_MUTEX_INITIALIZER, 0, 0, 0};
-    cbEncoder_t right_encoder = {PIN_ENCODER_RIGHT_A, PIN_ENCODER_RIGHT_B, GPIO_PIN_NC, PTHREAD_MUTEX_INITIALIZER, 0, 0, 0};
+	cbEncoder_t left_encoder = {PIN_ENCODER_LEFT_A, PIN_ENCODER_LEFT_B, GPIO_PIN_NC, PTHREAD_MUTEX_INITIALIZER};
+    cbEncoder_t right_encoder = {PIN_ENCODER_RIGHT_A, PIN_ENCODER_RIGHT_B, GPIO_PIN_NC, PTHREAD_MUTEX_INITIALIZER};
 	
 	// chiamate a GPIO
 	cbMotorGPIOinit(&left_motor);
@@ -279,16 +289,18 @@ int main(int argc, char* argv[]) {
     cbEncoderRegisterISRs(&right_encoder, 0);
 
 	//creazione degli struct per l'odometria
-	odometry_data_t odometry_data_left = {PTHREAD_MUTEX_INITIALIZER, false};
-	odometry_data_t odometry_data_right = {PTHREAD_MUTEX_INITIALIZER, false};
+	odometry_data_t odometry_data_left = {.lock = PTHREAD_MUTEX_INITIALIZER, .are_ticks_reset = false, .ticks = 0};
+	odometry_data_t odometry_data_right = {.lock = PTHREAD_MUTEX_INITIALIZER, .are_ticks_reset = false, .ticks = 0};
 
 	// creazione degli struct relativi ai thread
-	task_t left_motor_control_task = {motor_control_entry, 0};
-	task_t right_motor_control_task = {motor_control_entry, 0};
-	task_t cartesian_control_task = {cartesian_control_entry, 0};
+	task_t left_motor_control_task = {.entry_point = motor_control_entry, .worst_execution_time = 0};
+	task_t right_motor_control_task = {.entry_point = motor_control_entry, .worst_execution_time = 0};
+	task_t cartesian_control_task = {.entry_point = cartesian_control_entry, .worst_execution_time = 0};
 
-	// creazione degli struct rper gli argument dei thread
+	// creazione degli struct per gli argument dei thread
+	char left_name[] = "sinistra";
 	motor_control_args_t left_motor_control_args ={
+		left_name,
 		&left_motor,
 		&left_encoder,
 		MILLIMETERS_PER_TICK_LEFT,
@@ -296,7 +308,9 @@ int main(int argc, char* argv[]) {
 		&odometry_data_left,
 		&left_motor_control_task.worst_execution_time
 	};
+	char right_name[] = "destra";
 	motor_control_args_t right_motor_control_args = {
+		right_name,
 		&right_motor,
 		&right_encoder,
 		MILLIMETERS_PER_TICK_RIGHT,
@@ -311,12 +325,13 @@ int main(int argc, char* argv[]) {
 	};
 
 	//creazione dei punti del arco
-	generate_arc_points(waypoints, N_POINTS, 0, -400, 400, 1.57, -1.57);
+	generate_arc_points(waypoints, N_POINTS, 0, -230, 230, 1.57, -1.57);
 	for(int i = 0; i < N_POINTS; ++i) {
-		//waypoints[i].x = i * 50;
+		//waypoints[i].x = i * 15;
 		//waypoints[i].y = 0;
 		printf("punto %d: (%f, %f)\n", i, waypoints[i].x, waypoints[i].y);
 	}
+
 
 	// creazione dei thread
 	if(pthread_create(&(left_motor_control_task.tid), NULL, left_motor_control_task.entry_point, &left_motor_control_args) != 0) {

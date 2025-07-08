@@ -1,6 +1,6 @@
 # compiler e flag
 CC = cc
-CFLAGS = -Wall -Wextra -Iinclude
+CFLAGS = -Wall -Wextra -Wno-missing-field-initializers -Iinclude
 
 # librerie da linkare
 LIBS = -lm -lpthread -lpigpio

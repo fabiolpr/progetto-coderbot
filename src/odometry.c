@@ -1,19 +1,15 @@
 #include <math.h>
 #include "odometry.h"
 
-float mm_sx;                                                        // MILLIMETRI PERCORSI dalla RUOTA
-float mm_dx;
-
 double pose[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};              // MATRICE per POSE (totale)
 double newPose[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};           // MATRICE per POSE (corrente)
 double rt[3][3], r[3][3], t1[3][3], t2[3][3], temp[3][3];           // MATRICI di SUPPORTO
-                                                                 // (rototraslazione, rotazione, traslazione al CIR, traslazione dal CIR, temporanea)
 
 // struct della posizione
-position_t position = {PTHREAD_MUTEX_INITIALIZER, 0, 0, 0};
+position_t position = {.x = 0, .y = 0, .theta = 0};
 
 // Moltiplica due matrici 3x3: C = A * B
-void moltiplica_matrici_3x3(double matA[3][3], double matB[3][3], double result[3][3]) {
+void moltiplica_matrici_3x3(const double matA[3][3], const double matB[3][3], double result[3][3]) {
     for (int i = 0; i < 3; i++) {
         double a0 = matA[i][0];
         double a1 = matA[i][1];
