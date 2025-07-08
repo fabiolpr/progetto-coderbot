@@ -5,7 +5,7 @@
 #define ANGLE_TOLLERANCE 0.0175 //angolo minimo considerato come errore
 #define TARGET_POINT_INCREMENT 3
 #define POINTS_TO_CHECK 30 //numero di punti che vengono controllati durante la ricerca del punto più vicino
-#define MINIMUM_SPEED_CORRECTION_FACTOR 0.5
+#define MINIMUM_SPEED_CORRECTION_FACTOR 0.3
 
 point_t waypoints[N_POINTS];      // array di waypoints
 float speed;
@@ -53,15 +53,9 @@ int find_nearest_point(const point_t waypoints[], int num_points, position_t pos
 }
 
 bool cartesian_control() {
-    /* CARTESIAN CONTROLLER */
-    // POSIZIONE CORRENTE REALE (da odometria) APPROSSIMATA AL PUNTO della TRAIETTORIA PIU' VICINO
-    
-    //SISTEMA!
-        position.x = position.x;
-        position.y = position.y;
-        position.theta = position.theta;
-
+    //trovo il punto attualmente più vicino
     current_point = find_nearest_point(waypoints, N_POINTS, position, current_point);
+
     if(current_point >= N_POINTS - TARGET_POINT_INCREMENT){
         // FINE
         return true;
@@ -74,8 +68,11 @@ bool cartesian_control() {
     float delta_theta_c = desired_theta - position.theta; // errore dell'angolo
 
     // NORMALIZZAZIONE delta_theta_c in [-π, π]
-    while (delta_theta_c > M_PI) delta_theta_c -= 2 * M_PI;
-    while (delta_theta_c < -M_PI) delta_theta_c += 2 * M_PI;
+    delta_theta_c = fmod(delta_theta_c + M_PI, 2 * M_PI); //traslo nell'intervallo [0, 2π] e faccio il modulo
+    if (delta_theta_c < 0) //inverto la traslazione precedentemente fatta
+        delta_theta_c += M_PI; // +2π per traslare nel periodo positivo del modulo (cioè [0, 2π]) e -π per traslare in [-π, π]
+    else
+        delta_theta_c -= M_PI; // -π per traslare in [-π, π]
 
     // CONFRONTO con TOLLERANZA dell'(errore dell')ANGOLO
     if(fabs(delta_theta_c) < ANGLE_TOLLERANCE){
