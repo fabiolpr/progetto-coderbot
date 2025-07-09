@@ -125,19 +125,21 @@ static void update_stopwatch(stopwatch_t* stopwatch) {
 	stopwatch->delta = stopwatch->start.tv_nsec + delta_seconds * 1e9 - stopwatch->end.tv_nsec;
 }
 
-static void update_worst_time(stopwatch_t* stopwatch, long* worst_time) {
-		update_stopwatch(stopwatch);
-		if(*worst_time < stopwatch->delta)
-			*worst_time = stopwatch->delta;
+static void update_worst_time(stopwatch_t* thread_stopwatch, long time_spent_locked, long* worst_time) {
+		update_stopwatch(thread_stopwatch);
+		long time = thread_stopwatch->delta + time_spent_locked;
+		if(*worst_time < time)
+			*worst_time = time;
 }
 
 
 void* motor_control_entry(void* arg) {
 	// impostazione del thread per lo scheduler EDF
 	set_sched_deadline(1e6, MOTOR_CONTROL_PERIOD_NS, MOTOR_CONTROL_PERIOD_NS);
-	//creazione del cronometro per la task
-	stopwatch_t task_stopwatch = {.time_source = CLOCK_THREAD_CPUTIME_ID, .delta = 0};
-	find_current_time(&task_stopwatch);
+	//creazione dei cronometri per la task
+	stopwatch_t thread_execution_stopwatch = {.time_source = CLOCK_THREAD_CPUTIME_ID, .delta = 0};
+	find_current_time(&thread_execution_stopwatch);
+	stopwatch_t mutex_locked_time_stopwatch = {.time_source = CLOCK_MONOTONIC, .delta = 0};
 
 	// creazioni delle variabili necessarie
 	motor_control_args_t args = *(motor_control_args_t*)arg;
@@ -152,10 +154,14 @@ void* motor_control_entry(void* arg) {
 	// inizio ciclo
 	for(;;) {
 		//salvo i tick percorsi e il delta tempo tra questo ciclo e il precedente
+		find_current_time(&mutex_locked_time_stopwatch);
 		pthread_mutex_lock(&args.encoder->tick_lock);
+		update_stopwatch(&mutex_locked_time_stopwatch);
+
 		update_stopwatch(&tick_stopwatch);
 		int ticks = args.encoder->ticks;
 		args.encoder->ticks = 0;
+
         pthread_mutex_unlock(&args.encoder->tick_lock);
 
 		target = *(args.target_speed) * (tick_stopwatch.delta / 1e9) / args.millimeters_per_tick;
@@ -194,7 +200,7 @@ void* motor_control_entry(void* arg) {
 		printf("Motore: \"%s\", duty cycle %f, errore %f\n", args.motor_name, duty_cycle, overall_error_ticks);
 
 		//aggiorno il peggiore tempo di esecuzione
-		update_worst_time(&task_stopwatch, args.worst_execution_time);
+		update_worst_time(&thread_execution_stopwatch, mutex_locked_time_stopwatch.delta, args.worst_execution_time);
 		// aspetto il prossimo periodo oppure termino il thread se richiesto
 		pthread_testcancel();
 		sched_yield();
@@ -206,10 +212,11 @@ void* motor_control_entry(void* arg) {
 
 void* cartesian_control_entry(void* arg) {
 	// impostazione del thread per lo scheduler EDF
-	set_sched_deadline(1e6, CARTESIAN_CONTROL_PERIOD_NS, CARTESIAN_CONTROL_PERIOD_NS);
-	//creazione del cronometro per la task
-	stopwatch_t task_stopwatch = {.time_source = CLOCK_THREAD_CPUTIME_ID, .delta = 0};
-	find_current_time(&task_stopwatch);
+	set_sched_deadline(2e6, CARTESIAN_CONTROL_PERIOD_NS, CARTESIAN_CONTROL_PERIOD_NS);
+	//creazione dei cronometri per la task
+	stopwatch_t thread_execution_stopwatch = {.time_source = CLOCK_THREAD_CPUTIME_ID, .delta = 0};
+	find_current_time(&thread_execution_stopwatch);
+	stopwatch_t mutex_locked_time_stopwatch = {.time_source = CLOCK_MONOTONIC, .delta = 0};
 
 	cartesian_control_args_t args = *(cartesian_control_args_t*)arg;
 	odometry_data_t* odometry_data_left = args.left_data;
@@ -219,8 +226,10 @@ void* cartesian_control_entry(void* arg) {
 	for(;;) {
 		
 		//prendere i lock insieme per evitare discrepanze di tick tra le due ruote
+		find_current_time(&mutex_locked_time_stopwatch);
 		pthread_mutex_lock(&odometry_data_left->lock);
 		pthread_mutex_lock(&odometry_data_right->lock);
+		update_stopwatch(&mutex_locked_time_stopwatch);
 
 		int ticks_left = odometry_data_left->ticks;
 		int ticks_right = odometry_data_right->ticks;
@@ -245,12 +254,12 @@ void* cartesian_control_entry(void* arg) {
 
 			if(cartesian_control()) {
 				//se è stato completato il percorso
-				update_worst_time(&task_stopwatch, args.worst_execution_time);
+				update_worst_time(&thread_execution_stopwatch, mutex_locked_time_stopwatch.delta, args.worst_execution_time);
 				pthread_exit(EXIT_SUCCESS);
 			}
 		}
 
-		update_worst_time(&task_stopwatch, args.worst_execution_time);
+		update_worst_time(&thread_execution_stopwatch, mutex_locked_time_stopwatch.delta, args.worst_execution_time);
 		sched_yield();
 	}
 }
