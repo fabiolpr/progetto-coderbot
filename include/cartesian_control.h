@@ -12,12 +12,16 @@ typedef struct {
     float y;
 } point_t;
 
+typedef struct {
+    float general_speed;
+    float left_wheel_speed;
+    float right_wheel_speed;
+} speeds_t;
+
 // Variabili globali
 extern point_t waypoints[N_POINTS];      // array del percorso
 extern int current_point;  // indice corrente nel array del percorso
-extern float speed;           // velocità generale
-extern float speed_l;         // velocità ruota sinistra
-extern float speed_r;         // velocità ruota destra
+extern speeds_t speeds;
 
 // Funzioni
 void generate_arc_points(point_t points[], int num_points, float cx, float cy, float radius, float start_angle, float end_angle);

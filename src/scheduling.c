@@ -71,7 +71,7 @@ typedef struct motor_control_args {
 	cbMotor_t* motor;
 	cbEncoder_t* encoder;
 	float millimeters_per_tick;
-	float* speed;
+	float* target_speed;
 	odometry_data_t* odometry;
 	long* worst_execution_time;
 } motor_control_args_t;
@@ -158,7 +158,7 @@ void* motor_control_entry(void* arg) {
 		args.encoder->ticks = 0;
         pthread_mutex_unlock(&args.encoder->tick_lock);
 
-		target = *(args.speed) * (tick_stopwatch.delta / 1e9) / args.millimeters_per_tick;
+		target = *(args.target_speed) * (tick_stopwatch.delta / 1e9) / args.millimeters_per_tick;
 
 		//aggiorno i dati per la posizione e l'angolazione
 		ticks_since_odometry_update += ticks;
@@ -262,8 +262,8 @@ int main(int argc, char* argv[]) {
         printf("Uso: %s <numero intero corrispondente ai millimetri al secondo da percorrere>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-    speed = atof(argv[1]);
-	if(speed < MINIMUM_SPEED || speed > MAXIMUM_SPEED) {
+    speeds.general_speed = atof(argv[1]);
+	if(speeds.general_speed < MINIMUM_SPEED || speeds.general_speed > MAXIMUM_SPEED) {
 		printf("la velocità deve essere tra %d e %d, estremi inclusi\n", MINIMUM_SPEED, MAXIMUM_SPEED);
 		exit(EXIT_FAILURE);
 	}
@@ -304,7 +304,7 @@ int main(int argc, char* argv[]) {
 		&left_motor,
 		&left_encoder,
 		MILLIMETERS_PER_TICK_LEFT,
-		&speed_l,
+		&speeds.left_wheel_speed,
 		&odometry_data_left,
 		&left_motor_control_task.worst_execution_time
 	};
@@ -314,7 +314,7 @@ int main(int argc, char* argv[]) {
 		&right_motor,
 		&right_encoder,
 		MILLIMETERS_PER_TICK_RIGHT,
-		&speed_r,
+		&speeds.right_wheel_speed,
 		&odometry_data_right,
 		&right_motor_control_task.worst_execution_time
 	};

@@ -8,9 +8,11 @@
 #define MINIMUM_SPEED_CORRECTION_FACTOR 0.3
 
 point_t waypoints[N_POINTS];      // array di waypoints
-float speed;
-float speed_l = 0;                  // velocità ruota sinistra
-float speed_r = 0;                  // velocità ruota destra
+speeds_t speeds = {
+    .general_speed = 0,
+    .left_wheel_speed = 0,
+    .right_wheel_speed = 0
+};
 int current_point = 0;
 /*  la correzione dell'errore della velocità viene calcolata con una funzione lineare (multiplier * x + MINIMUM_SPEED_CORRECTION_FACTOR)
     vogliamo che con errore 0 sia a MINIMUM_SPEED_CORRECTION_FACTOR, e con errore massimo, cioè M_PI, sia a 1.
@@ -53,13 +55,17 @@ int find_nearest_point(const point_t waypoints[], int num_points, position_t pos
 }
 
 bool cartesian_control() {
-    //trovo il punto attualmente più vicino
+    //trova il punto attualmente più vicino e quello da puntare
     current_point = find_nearest_point(waypoints, N_POINTS, position, current_point);
 
-    if(current_point >= N_POINTS - TARGET_POINT_INCREMENT){
-        // FINE
+    int last_point_index = N_POINTS - 1;
+
+    if(current_point == last_point_index) 
         return true;
-    }
+
+    int target_point = current_point + TARGET_POINT_INCREMENT;
+    if(target_point > last_point_index)
+        target_point = last_point_index;
 
     // waypoints[current_point + TARGET_POINT_INCREMENT] POSIZIONE che si PUNTA (per evitare errori, non troppo vicina)
     float delta_x = waypoints[current_point + TARGET_POINT_INCREMENT].x - position.x;
@@ -77,23 +83,23 @@ bool cartesian_control() {
     // CONFRONTO con TOLLERANZA dell'(errore dell')ANGOLO
     if(fabs(delta_theta_c) < ANGLE_TOLLERANCE){
         // ANGOLO (piu' o meno) CORRETTO, si PROCEDE in LINEA RETTA per PUNTARE alla POSIZIONE
-        speed_l = speed;
-        speed_r = speed;
+        speeds.left_wheel_speed = speeds.general_speed;
+        speeds.right_wheel_speed = speeds.general_speed;
     } else {
         // CORREZIONE VELOCITA' per STERZARE
 
-        //tra MINIMUM_SPEED_CORRECTION_FACTOR e 1
+        // correction_factortra MINIMUM_SPEED_CORRECTION_FACTOR e 1
         float correction_factor = multiplier * fabs(delta_theta_c) + MINIMUM_SPEED_CORRECTION_FACTOR;
-        // <= alla velocità
-        correction_factor *= speed;
+        // correction_factor minore o uguale alla velocità
+        correction_factor *= speeds.general_speed;
         if(delta_theta_c < 0){
             // sterzare a DESTRA
-            speed_l = speed;
-            speed_r = speed - correction_factor;
+            speeds.left_wheel_speed = speeds.general_speed;
+            speeds.right_wheel_speed = speeds.general_speed - correction_factor;
         } else {
             // sterzare a SINISTRA
-            speed_l = speed - correction_factor;
-            speed_r = speed;
+            speeds.left_wheel_speed = speeds.general_speed - correction_factor;
+            speeds.right_wheel_speed = speeds.general_speed;
         }
     }
 
