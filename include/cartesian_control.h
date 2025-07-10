@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#define N_POINTS 50 // numero di punti
+#define N_POINTS 200 // numero di punti
 
 
 // Definizione del tipo point_t

@@ -2,7 +2,6 @@
 #include "odometry.h"
 
 double pose[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};              // MATRICE per POSE (totale)
-double newPose[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};           // MATRICE per POSE (corrente)
 double rt[3][3], r[3][3], t1[3][3], t2[3][3], temp[3][3];           // MATRICI di SUPPORTO
 
 // struct della posizione
@@ -23,7 +22,7 @@ void moltiplica_matrici_3x3(const double matA[3][3], const double matB[3][3], do
 /* ODOMETRIA */
 void findNewPose(float mm_sx, float mm_dx, float average_mm) {
     // calcolo ANGOLO
-    double delta_theta = -(mm_sx - mm_dx) / B;
+    double delta_theta = atan2(mm_dx - mm_sx, B);
 
     // SOGLIA (ticks sinistra e destra mai esattamente uguali, anche se dritto)
     if (fabs(delta_theta) < THRESHOLD) {
@@ -34,7 +33,7 @@ void findNewPose(float mm_sx, float mm_dx, float average_mm) {
         rt[2][0] = 0; rt[2][1] = 0; rt[2][2] = 1;
     } else {
         // movimento: CURVANDO
-        double d = (mm_dx / delta_theta) - (B / 2);
+        double d = (average_mm / delta_theta); //mm = raggio * delta_theta
         // TRASLAZIONE al CIR
         t1[0][0] = 1; t1[0][1] = 0; t1[0][2] = 0;
         t1[1][0] = 0; t1[1][1] = 1; t1[1][2] = -d;
@@ -53,6 +52,7 @@ void findNewPose(float mm_sx, float mm_dx, float average_mm) {
     }
 
     // calcolo (nuova) POSE
+    double newPose[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
     moltiplica_matrici_3x3(pose, rt, newPose);
     for (int r = 0; r < 3; r++)
         for (int c = 0; c < 3; c++)

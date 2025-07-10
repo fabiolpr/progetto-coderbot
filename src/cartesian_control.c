@@ -3,7 +3,7 @@
 #include "odometry.h"
 
 #define ANGLE_TOLLERANCE 0.0175 //angolo minimo considerato come errore
-#define TARGET_POINT_INCREMENT 3
+#define TARGET_POINT_INCREMENT 5
 #define POINTS_TO_CHECK 30 //numero di punti che vengono controllati durante la ricerca del punto più vicino
 #define MINIMUM_SPEED_CORRECTION_FACTOR 0.3
 
