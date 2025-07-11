@@ -24,7 +24,8 @@
 #define CYCLE_ERROR_TO_DUTY_CYCLE 15e5
 #define OVERALL_ERROR_TO_DUTY_CYCLE 5e5
 #define MOTOR_CONTROL_PERIOD_NS 2e6
-#define CARTESIAN_CONTROL_PERIOD_NS 1e7 
+#define CARTESIAN_CONTROL_PERIOD_NS 1e7
+#define PATH_INDEX 1
 
 // definizione degli struct e i loro rispettivi tipi
 struct sched_attr {
@@ -197,7 +198,7 @@ void* motor_control_entry(void* arg) {
 		// imposto la velocità e direzione del motore
 		cbMotorMove(args.motor, direction, duty_cycle);
 
-		printf("Motore: \"%s\", duty cycle %f, errore %f\n", args.motor_name, duty_cycle, overall_error_ticks);
+		//printf("Motore: \"%s\", duty cycle %f, errore %f\n", args.motor_name, duty_cycle, overall_error_ticks);
 
 		//aggiorno il peggiore tempo di esecuzione
 		update_worst_time(&thread_execution_stopwatch, mutex_locked_time_stopwatch.delta, args.worst_execution_time);
@@ -247,10 +248,11 @@ void* cartesian_control_entry(void* arg) {
 		pthread_mutex_unlock(&odometry_data_right->lock);
 
 		if(is_delta_large_enough) {
-			findNewPose(left_mm, right_mm, average_mm);
-
+			find_new_pose(left_mm, right_mm, average_mm);
+			/*
 			printf("x: %f, y:%f, angolo: %f\n", position.x, position.y, position.theta);
-			printf("Siamo al punto: %d\n", current_point); 
+			printf("Siamo al punto: %d\n", current_point); */
+			printf("new Position(%f, %f, %f), ", position.x, position.y, position.theta);
 
 			if(cartesian_control()) {
 				//se è stato completato il percorso
@@ -334,13 +336,29 @@ int main(int argc, char* argv[]) {
 	};
 
 	//creazione dei punti del arco
-	generate_arc_points(waypoints, N_POINTS, 0, 230, 230, -1.57, 1.57);
-	for(int i = 0; i < N_POINTS; ++i) {
-		//waypoints[i].x = i * 15;
-		//waypoints[i].y = 0;
-		printf("punto %d: (%f, %f)\n", i, waypoints[i].x, waypoints[i].y);
+	switch(PATH_INDEX) {
+		case 0:
+			/* per ruotare intorno ad un righello di 30 cm:
+			   15 cm di raggio, + un cm per i bordi del righello + 7 cm tra il lato estreno della ruota e il centro del robot*/
+			generate_arc_points(waypoints, N_POINTS, 0, 230, 230, -1.57, 1.57);
+			break;
+		case 1:
+		// per percorrere un righello di 30 cm
+			{
+				float increment = 300.f / N_POINTS;
+				for(int i = 0; i < N_POINTS; ++i) {
+					waypoints[i].x = increment * (i + 1);
+					waypoints[i].y = 0;
+				}
+			}
+			break;
+		default:
+		exit(EXIT_FAILURE);
 	}
-
+	for(int i = 0; i < N_POINTS; ++i) 
+		printf("new Point(%f, %f), ", waypoints[i].x, waypoints[i].y);
+		//printf("punto %d: (%f, %f)\n", i, waypoints[i].x, waypoints[i].y);
+	puts("\n");
 
 	// creazione dei thread
 	if(pthread_create(&(left_motor_control_task.tid), NULL, left_motor_control_task.entry_point, &left_motor_control_args) != 0) {

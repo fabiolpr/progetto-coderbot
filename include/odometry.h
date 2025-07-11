@@ -1,8 +1,6 @@
 #ifndef ODOMETRY_H
 #define ODOMETRY_H
 
-#include <pthread.h>
-
 #define MILLIMETERS_PER_TICK_LEFT 0.1114790994
 #define MILLIMETERS_PER_TICK_RIGHT 0.1117455841
 #define MINIMUM_DELTA_MILLIMETERS 2
@@ -17,6 +15,6 @@ typedef struct {
 
 extern position_t position;
 
-void findNewPose(float mm_sx, float mm_dx, float average_mm);
+void find_new_pose(float mm_sx, float mm_dx, float average_mm);
 
 #endif // ODOMETRY_H
