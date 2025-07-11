@@ -24,7 +24,8 @@ extern int current_point;  // indice corrente nel array del percorso
 extern speeds_t speeds;
 
 // Funzioni
-void generate_arc_points(point_t points[], int num_points, float cx, float cy, float radius, float start_angle, float end_angle);
+void generate_arc_points(point_t points[], int num_points, int offset, float cx, float cy, float radius, float start_angle, float end_angle);
+void generate_straight_line_points(point_t points[], int num_points, int offset, float x1, float y1, float x2, float y2);
 
 bool cartesian_control();
 

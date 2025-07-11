@@ -25,12 +25,20 @@ float get_distance_squared_between_points(float x1, float y1, float x2, float y2
     return dx * dx + dy * dy;
 }
 
-void generate_arc_points(point_t points[], int num_points, float cx, float cy, float radius, float start_angle, float end_angle) {
+void generate_arc_points(point_t points[], int num_points, int offset, float cx, float cy, float radius, float start_angle, float end_angle) {
     for (int i = 0; i < num_points; ++i) {
         float t = (float)i / (num_points - 1);
         float angle = start_angle + t * (end_angle - start_angle);
-        points[i].x = cx + radius * cos(angle);
-        points[i].y = cy + radius * sin(angle);
+        points[i + offset].x = cx + radius * cos(angle);
+        points[i + offset].y = cy + radius * sin(angle);
+    }
+}
+
+void generate_straight_line_points(point_t points[], int num_points, int offset, float x1, float y1, float x2, float y2) {
+        for (int i = 0; i < num_points; ++i) {
+        float t = (float)i / (num_points - 1);
+        points[i + offset].x = x1 + t * (x2 - x1);
+        points[i + offset].y = y1 + t * (y2 - y1);
     }
 }
 

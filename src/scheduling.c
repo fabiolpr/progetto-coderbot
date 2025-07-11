@@ -25,7 +25,7 @@
 #define OVERALL_ERROR_TO_DUTY_CYCLE 5e5
 #define MOTOR_CONTROL_PERIOD_NS 2e6
 #define CARTESIAN_CONTROL_PERIOD_NS 1e7
-#define PATH_INDEX 1
+#define PATH_INDEX 2
 
 // definizione degli struct e i loro rispettivi tipi
 struct sched_attr {
@@ -340,19 +340,27 @@ int main(int argc, char* argv[]) {
 		case 0:
 			/* per ruotare intorno ad un righello di 30 cm:
 			   15 cm di raggio, + un cm per i bordi del righello + 7 cm tra il lato estreno della ruota e il centro del robot*/
-			generate_arc_points(waypoints, N_POINTS, 0, 230, 230, -1.57, 1.57);
+			generate_arc_points(waypoints, N_POINTS, 0, 0, 230, 230, -1.57, 1.57);
 			break;
 		case 1:
-		// per percorrere un righello di 30 cm
+			// per percorrere un righello di 30 cm
+			generate_straight_line_points(waypoints, N_POINTS, 0, 0, 0, 300, 0);
+			break;
+
+		case 2:
+			// percorso a forma di 8
 			{
-				float increment = 300.f / N_POINTS;
-				for(int i = 0; i < N_POINTS; ++i) {
-					waypoints[i].x = increment * (i + 1);
-					waypoints[i].y = 0;
-				}
+				int quarter = N_POINTS / 4;
+				float radius = 200;
+				generate_arc_points(waypoints, quarter, 0, 0, -radius, radius, 1.57, -1.57);
+				generate_straight_line_points(waypoints, quarter, quarter, 0, -radius * 2, -radius * 2, 0);
+				generate_arc_points(waypoints, quarter, quarter * 2, -radius * 2, -radius, radius, 1.57, 4.71);
+				generate_straight_line_points(waypoints, quarter, N_POINTS - quarter, -radius * 2, -radius * 2, 0, 0);
 			}
 			break;
+
 		default:
+		perror("main: selezione del percorso non valida");
 		exit(EXIT_FAILURE);
 	}
 	for(int i = 0; i < N_POINTS; ++i) 
