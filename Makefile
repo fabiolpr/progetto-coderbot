@@ -1,6 +1,6 @@
 # compiler e flag
 CC = cc
-CFLAGS = -Wall -Wextra -Wno-missing-field-initializers -Iinclude
+CFLAGS = -Wall -Wextra -Wno-missing-field-initializers -Iinclude -MMD -MP
 
 # librerie da linkare
 LIBS = -lm -lpthread -lpigpio
@@ -13,6 +13,7 @@ BUILD_DIR = build
 # file sorgente, file oggetto e file eseguibile
 SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
+DEPS := $(OBJS:.o=.d)
 EXE  := $(BUILD_DIR)/coderbot.exe
 
 # obbiettivo di default
@@ -31,5 +32,8 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 # rimozione della cartella di build
 clean:
 	rm -rf $(BUILD_DIR)
+
+# includi i file di dependency generati automaticamente
+-include $(DEPS)
 
 .PHONY: all clean

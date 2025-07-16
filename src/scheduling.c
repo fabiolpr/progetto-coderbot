@@ -20,12 +20,13 @@
 // macro
 #define MAX_DUTY_CYCLE 0.6
 #define MINIMUM_SPEED 5
-#define MAXIMUM_SPEED 60
+#define MAXIMUM_SPEED 50
+#define MAXIMUM_WHEEL_ERROR_MILLIMETERS 10
 #define CYCLE_ERROR_TO_DUTY_CYCLE 15e5
 #define OVERALL_ERROR_TO_DUTY_CYCLE 5e5
 #define MOTOR_CONTROL_PERIOD_NS 2e6
 #define CARTESIAN_CONTROL_PERIOD_NS 1e7
-#define PATH_INDEX 2
+#define PATH_INDEX 0
 
 // definizione degli struct e i loro rispettivi tipi
 struct sched_attr {
@@ -75,6 +76,7 @@ typedef struct motor_control_args {
 	float* target_speed;
 	odometry_data_t* odometry;
 	long* worst_execution_time;
+	pthread_t* control_thread_id;
 } motor_control_args_t;
 
 typedef struct cartesian_control_args {
@@ -149,6 +151,7 @@ void* motor_control_entry(void* arg) {
 	int ticks_since_odometry_update = 0;
 	float target;
 	float duty_cycle;
+	float maximum_error_ticks = MAXIMUM_WHEEL_ERROR_MILLIMETERS / args.millimeters_per_tick;
 	cbDir_t direction;
 	stopwatch_t tick_stopwatch = {.time_source = CLOCK_MONOTONIC, .delta = 0};
 	find_current_time(&tick_stopwatch);
@@ -198,7 +201,11 @@ void* motor_control_entry(void* arg) {
 		// imposto la velocità e direzione del motore
 		cbMotorMove(args.motor, direction, duty_cycle);
 
-		//printf("Motore: \"%s\", duty cycle %f, errore %f\n", args.motor_name, duty_cycle, overall_error_ticks);
+		printf("Motore: \"%s\", duty cycle %f, errore %f\n", args.motor_name, duty_cycle, overall_error_ticks);
+
+		//termina il programma se il numero di tick accumulati è troppo elevato
+		if(overall_error_ticks > maximum_error_ticks)
+			pthread_cancel(*args.control_thread_id);
 
 		//aggiorno il peggiore tempo di esecuzione
 		update_worst_time(&thread_execution_stopwatch, mutex_locked_time_stopwatch.delta, args.worst_execution_time);
@@ -249,10 +256,10 @@ void* cartesian_control_entry(void* arg) {
 
 		if(is_delta_large_enough) {
 			find_new_pose(left_mm, right_mm, average_mm);
-			/*
+
 			printf("x: %f, y:%f, angolo: %f\n", position.x, position.y, position.theta);
-			printf("Siamo al punto: %d\n", current_point); */
-			printf("new Position(%f, %f, %f), ", position.x, position.y, position.theta);
+			printf("Siamo al punto: %d\n", current_point);
+			//printf("new Position(%f, %f, %f), ", position.x, position.y, position.theta);
 
 			if(cartesian_control()) {
 				//se è stato completato il percorso
@@ -262,6 +269,7 @@ void* cartesian_control_entry(void* arg) {
 		}
 
 		update_worst_time(&thread_execution_stopwatch, mutex_locked_time_stopwatch.delta, args.worst_execution_time);
+		pthread_testcancel();
 		sched_yield();
 	}
 }
@@ -270,7 +278,7 @@ void* cartesian_control_entry(void* arg) {
 int main(int argc, char* argv[]) {
 	// lettura del valore passato al programma
     if (argc < 2) {
-        printf("Uso: %s <numero intero corrispondente ai millimetri al secondo da percorrere>\n", argv[0]);
+        printf("Uso: %s <numero corrispondente ai millimetri al secondo da percorrere>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
     speeds.general_speed = atof(argv[1]);
@@ -317,7 +325,8 @@ int main(int argc, char* argv[]) {
 		MILLIMETERS_PER_TICK_LEFT,
 		&speeds.left_wheel_speed,
 		&odometry_data_left,
-		&left_motor_control_task.worst_execution_time
+		&left_motor_control_task.worst_execution_time,
+		&cartesian_control_task.tid
 	};
 	char right_name[] = "destra";
 	motor_control_args_t right_motor_control_args = {
@@ -327,7 +336,8 @@ int main(int argc, char* argv[]) {
 		MILLIMETERS_PER_TICK_RIGHT,
 		&speeds.right_wheel_speed,
 		&odometry_data_right,
-		&right_motor_control_task.worst_execution_time
+		&right_motor_control_task.worst_execution_time,
+		&cartesian_control_task.tid
 	};
 	cartesian_control_args_t cartesian_control_args = {
 		&odometry_data_left,
@@ -364,8 +374,8 @@ int main(int argc, char* argv[]) {
 		exit(EXIT_FAILURE);
 	}
 	for(int i = 0; i < N_POINTS; ++i) 
-		printf("new Point(%f, %f), ", waypoints[i].x, waypoints[i].y);
-		//printf("punto %d: (%f, %f)\n", i, waypoints[i].x, waypoints[i].y);
+		//printf("new Point(%f, %f), ", waypoints[i].x, waypoints[i].y);
+		printf("punto %d: (%f, %f)\n", i, waypoints[i].x, waypoints[i].y);
 	puts("\n");
 
 	// creazione dei thread
